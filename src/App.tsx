@@ -13,30 +13,6 @@ const FUEL_COLORS: Record<string, string> = {
 };
 
 
-const PLANT_SOURCE_COLORS: Record<string, string> = {
-  'natural gas': '#f97316',
-  gas: '#f97316',
-  coal: '#64748b',
-  nuclear: '#a855f7',
-  wind: '#06b6d4',
-  solar: '#eab308',
-  hydroelectric: '#3b82f6',
-  hydro: '#3b82f6',
-  geothermal: '#14b8a6',
-  petroleum: '#78716c',
-  oil: '#78716c',
-  biomass: '#84cc16',
-  batteries: '#10b981',
-  battery: '#10b981',
-  other: '#94a3b8',
-};
-
-function plantColor(prim: string | undefined): string {
-  if (!prim) return PLANT_SOURCE_COLORS.other;
-  const k = prim.toLowerCase();
-  return PLANT_SOURCE_COLORS[k] || PLANT_SOURCE_COLORS.other;
-}
-
 const FUEL_LABELS: Record<string, string> = {
   COL: 'Coal', NG: 'Natural Gas', NUC: 'Nuclear', WND: 'Wind',
   SUN: 'Solar', WAT: 'Hydro', GEO: 'Geothermal', OTH: 'Other',
@@ -385,7 +361,6 @@ export default function App() {
             initialViewState={{ longitude: -98.5, latitude: 39.8, zoom: 3.6 }}
             style={{ width: '100%', height: '100%' }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            attributionControl={true}
           >
             <NavigationControl position="top-right" />
             {layers.plants && plantsGeojson && (
