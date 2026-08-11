@@ -111,7 +111,7 @@ export default function App() {
   const [layers, setLayers] = useState({
     demand: true,
     plants: true,
-    lines: false,
+    lines: true,
     utilities: false,
   });
   const [search, setSearch] = useState('');
@@ -125,6 +125,7 @@ export default function App() {
   const [popupInfo, setPopupInfo] = useState<{ lat: number; lon: number; text: string } | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [plantsGeojson, setPlantsGeojson] = useState<any>(null);
+  const [linesGeojson, setLinesGeojson] = useState<any>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -150,10 +151,21 @@ export default function App() {
   }, [loadData]);
 
   useEffect(() => {
-    fetch('/data/plants_northeast.geojson')
-      .then((r) => r.json())
+    const base = import.meta.env.BASE_URL;
+    fetch(`${base}data/plants_northeast.geojson`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Plants HTTP ${r.status}`);
+        return r.json();
+      })
       .then((gj) => setPlantsGeojson(gj))
       .catch((e) => console.warn('Plants GeoJSON load failed', e));
+    fetch(`${base}data/lines_northeast.geojson`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Lines HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((gj) => setLinesGeojson(gj))
+      .catch((e) => console.warn('Lines GeoJSON load failed', e));
   }, []);
 
   // Debounced utility search
@@ -313,7 +325,7 @@ export default function App() {
               <label className="layer-item">
                 <input type="checkbox" checked={layers.lines} onChange={() => toggleLayer('lines')} />
                 <span className="layer-swatch" style={{ background: '#94a3b8' }} />
-                Transmission lines (open data)
+                Transmission lines — NE sample (open data)
               </label>
               <label className="layer-item">
                 <input type="checkbox" checked={layers.utilities} onChange={() => toggleLayer('utilities')} />
@@ -349,8 +361,12 @@ export default function App() {
           <div className="sidebar-section" style={{ flex: 1 }}>
             <h3>About</h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Legal public data only: EIA hourly RTO, CommonGrid (ODbL), Nominatim (ODbL), HIFLD-derived open archives.
+              Legal public data only: EIA hourly RTO, CommonGrid (ODbL), Nominatim (ODbL), open plant/line archives.
               No utility OMS scraping. Data lag ~1 hour. Auto-refresh 15 min.
+            </p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--warning)', lineHeight: 1.5, marginTop: 10 }}>
+              Live outages are not shown. National outage polygons require a licensed feed (e.g. PowerOutage.us API).
+              For outages, use utility maps or PowerOutage.us directly.
             </p>
           </div>
         </aside>
@@ -358,11 +374,39 @@ export default function App() {
         <div className="map-container">
           <Map
             ref={mapRef}
-            initialViewState={{ longitude: -98.5, latitude: 39.8, zoom: 3.6 }}
+            initialViewState={{ longitude: -74.5, latitude: 41.5, zoom: 5.5 }}
             style={{ width: '100%', height: '100%' }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
           >
             <NavigationControl position="top-right" />
+
+            {layers.lines && linesGeojson && (
+              <Source id="lines-ne" type="geojson" data={linesGeojson}>
+                <Layer
+                  id="lines-line"
+                  type="line"
+                  paint={{
+                    'line-color': [
+                      'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
+                      '345', '#f59e0b',
+                      '500', '#ef4444',
+                      '230', '#eab308',
+                      '100-161', '#94a3b8',
+                      '69-99', '#64748b',
+                      '#475569'
+                    ],
+                    'line-width': [
+                      'interpolate', ['linear'], ['zoom'],
+                      4, 0.5,
+                      8, 1.5,
+                      12, 3
+                    ],
+                    'line-opacity': 0.8
+                  }}
+                />
+              </Source>
+            )}
+
             {layers.plants && plantsGeojson && (
               <Source id="plants-ne" type="geojson" data={plantsGeojson}>
                 <Layer
