@@ -349,3 +349,60 @@
 a {
   color: var(--accent);
 }
+
+.hazard-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hazard-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.hazard-sev {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.hazard-event {
+  font-weight: 600;
+  color: var(--text-primary, #e2e8f0);
+}
+
+.hazard-area {
+  color: var(--text-muted, #94a3b8);
+  font-size: 0.72rem;
+}
+
+.odin-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.78rem;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.odin-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.odin-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #f97316;
+  flex-shrink: 0;
+}

@@ -55,6 +55,26 @@ interface PopupState {
   props: PlantProps;
 }
 
+interface NwsAlert {
+  id: string;
+  event: string;
+  severity: string;
+  urgency: string;
+  headline: string;
+  area: string;
+  onset?: string;
+  ends?: string;
+}
+
+interface OdinUtility {
+  name: string;
+  totalOutages: number;
+  dataResolution?: string;
+  receivedDate?: string;
+  eiaId?: string;
+}
+
+
 async function fetchEiaFuelMix(): Promise<FuelPoint[]> {
   if (!EIA_KEY) throw new Error('Missing VITE_EIA_API_KEY');
   const url = new URL('https://api.eia.gov/v2/electricity/rto/fuel-type-data/data/');
@@ -138,6 +158,82 @@ function formatTime(iso: string): string {
   }
 }
 
+
+const GRID_ALERT_EVENTS = new Set([
+  'High Wind Warning', 'High Wind Watch', 'Wind Advisory',
+  'Tornado Warning', 'Tornado Watch',
+  'Severe Thunderstorm Warning', 'Severe Thunderstorm Watch',
+  'Hurricane Warning', 'Hurricane Watch', 'Tropical Storm Warning', 'Tropical Storm Watch',
+  'Winter Storm Warning', 'Winter Storm Watch', 'Ice Storm Warning', 'Blizzard Warning',
+  'Flood Warning', 'Flash Flood Warning',
+  'Excessive Heat Warning', 'Heat Advisory',
+  'Red Flag Warning', 'Fire Weather Watch', 'Extreme Fire Danger',
+  'Storm Surge Warning', 'Storm Surge Watch',
+]);
+
+async function fetchNwsAlerts(): Promise<NwsAlert[]> {
+  const res = await fetch('https://api.weather.gov/alerts/active', {
+    headers: {
+      'User-Agent': 'PowerGridXplr/1.0 (https://github.com/jasonsaro-ops/PowerGridXplr)',
+      Accept: 'application/geo+json',
+    },
+  });
+  if (!res.ok) throw new Error(`NWS alerts ${res.status}`);
+  const json = await res.json();
+  const features = json.features || [];
+  const out: NwsAlert[] = [];
+  for (const f of features) {
+    const p = f.properties || {};
+    const event = String(p.event || '');
+    if (!GRID_ALERT_EVENTS.has(event) && !/Wind|Ice|Heat|Fire|Flood|Tornado|Hurricane|Blizzard|Storm/i.test(event)) {
+      continue;
+    }
+    // skip pure test messages
+    if (/^Test Message$/i.test(event)) continue;
+    out.push({
+      id: String(p.id || f.id || Math.random()),
+      event,
+      severity: String(p.severity || 'Unknown'),
+      urgency: String(p.urgency || ''),
+      headline: String(p.headline || p.event || ''),
+      area: String(p.areaDesc || '').split(';')[0].trim(),
+      onset: p.onset,
+      ends: p.ends || p.expires,
+    });
+  }
+  // severity rank
+  const rank: Record<string, number> = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
+  out.sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9) || a.event.localeCompare(b.event));
+  return out;
+}
+
+async function fetchOdinStatus(): Promise<OdinUtility[]> {
+  const res = await fetch('https://odin.ornl.gov/odi/status');
+  if (!res.ok) throw new Error(`ODIN ${res.status}`);
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((x: Record<string, unknown>) => ({
+      name: String(x.name || 'Unknown'),
+      totalOutages: Number(x.totalOutages) || 0,
+      dataResolution: x.dataResolution ? String(x.dataResolution) : undefined,
+      receivedDate: x.receivedDate ? String(x.receivedDate) : undefined,
+      eiaId: x.eiaId != null ? String(x.eiaId) : undefined,
+    }))
+    .filter((x: OdinUtility) => x.totalOutages > 0)
+    .sort((a: OdinUtility, b: OdinUtility) => b.totalOutages - a.totalOutages);
+}
+
+function severityColor(sev: string): string {
+  switch (sev) {
+    case 'Extreme': return '#ef4444';
+    case 'Severe': return '#f97316';
+    case 'Moderate': return '#eab308';
+    case 'Minor': return '#94a3b8';
+    default: return '#64748b';
+  }
+}
+
 const plantCirclePaint = {
   'circle-radius': [
     'interpolate', ['linear'], ['coalesce', ['get', 'Total_MW'], 1],
@@ -185,29 +281,41 @@ export default function App() {
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
+  const [nwsAlerts, setNwsAlerts] = useState<NwsAlert[]>([]);
+  const [odinUtils, setOdinUtils] = useState<OdinUtility[]>([]);
+  const [hazardError, setHazardError] = useState<string | null>(null);
 
-  const loadEia = useCallback(async () => {
+  const loadLive = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setHazardError(null);
     try {
       const [fuel, demand] = await Promise.all([fetchEiaFuelMix(), fetchEiaDemand()]);
       setFuelData(fuel);
       setDemandData(demand);
-      setLastUpdated(new Date());
       setStatusOk(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to fetch EIA data');
       setStatusOk(false);
-    } finally {
-      setLoading(false);
     }
+
+    try {
+      const [alerts, odin] = await Promise.all([fetchNwsAlerts(), fetchOdinStatus()]);
+      setNwsAlerts(alerts);
+      setOdinUtils(odin);
+    } catch (e: unknown) {
+      setHazardError(e instanceof Error ? e.message : 'Hazard feeds failed');
+    }
+
+    setLastUpdated(new Date());
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    loadEia();
-    const id = setInterval(loadEia, 15 * 60 * 1000);
+    loadLive();
+    const id = setInterval(loadLive, 15 * 60 * 1000);
     return () => clearInterval(id);
-  }, [loadEia]);
+  }, [loadLive]);
 
   useEffect(() => {
     PLANT_REGIONS.forEach((r) => {
@@ -339,7 +447,7 @@ export default function App() {
           <span className="last-updated">
             {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Waiting…'}
           </span>
-          <button className="btn btn-ghost" onClick={loadEia} disabled={loading}>
+          <button className="btn btn-ghost" onClick={loadLive} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -440,10 +548,51 @@ export default function App() {
             </div>
           </div>
 
+          <div className="sidebar-section">
+            <h3>NWS grid-relevant alerts</h3>
+            {hazardError && <div className="error-banner">{hazardError}</div>}
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+              {nwsAlerts.length} active · NOAA public API · not a forecast product
+            </div>
+            <div className="hazard-list">
+              {nwsAlerts.length === 0 && !hazardError && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No grid-relevant alerts (or loading…)</div>
+              )}
+              {nwsAlerts.slice(0, 12).map((a) => (
+                <div className="hazard-item" key={a.id}>
+                  <span className="hazard-sev" style={{ background: severityColor(a.severity) }} />
+                  <div>
+                    <div className="hazard-event">{a.event}</div>
+                    <div className="hazard-area">{a.area || a.headline}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="sidebar-section">
+            <h3>ODIN utility outages</h3>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+              {odinUtils.reduce((s, u) => s + u.totalOutages, 0).toLocaleString()} customers reported across{' '}
+              {odinUtils.length} utilities · ORNL public status (not full national coverage)
+            </div>
+            <div className="hazard-list">
+              {odinUtils.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No outages in feed (or loading…)</div>
+              )}
+              {odinUtils.slice(0, 10).map((u) => (
+                <div className="odin-row" key={u.name + String(u.totalOutages)}>
+                  <span className="odin-name" title={u.name}>{u.name}</span>
+                  <span className="odin-count">{u.totalOutages.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="sidebar-section" style={{ flex: 1 }}>
             <h3>About & limits</h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Legal public data: EIA hourly RTO, CommonGrid (ODbL), Nominatim (ODbL), open plant archives (EIA/HIFLD-derived).
+              Legal public data: EIA hourly RTO, NWS alerts, ODIN status (ORNL), CommonGrid (ODbL), Nominatim (ODbL), open plant archives.
               Auto-refresh 15 min. Data lag ~1 hour.
             </p>
             <p style={{ fontSize: '0.75rem', color: 'var(--warning)', lineHeight: 1.5, marginTop: 10 }}>
