@@ -40,6 +40,15 @@ interface PlantProps {
   County?: string;
   Utility_Na?: string;
 }
+interface FeatureCollection {
+  type: 'FeatureCollection';
+  features: Array<{
+    type: string;
+    geometry?: { type: string; coordinates: number[] | number[][] | number[][][] };
+    properties?: Record<string, unknown> | null;
+  }>;
+}
+
 interface PopupState {
   lon: number;
   lat: number;
@@ -171,8 +180,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusOk, setStatusOk] = useState(true);
-  const [plantData, setPlantData] = useState<Record<string, GeoJSON.FeatureCollection | null>>({});
-  const [linesGeojson, setLinesGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [plantData, setPlantData] = useState<Record<string, FeatureCollection | null>>({});
+  const [linesGeojson, setLinesGeojson] = useState<FeatureCollection | null>(null);
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
