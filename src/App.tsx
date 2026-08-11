@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Map, { NavigationControl, Source, Layer, Popup } from 'react-map-gl/maplibre';
-import type { MapRef } from 'react-map-gl/maplibre';
+import type { MapRef, MapLayerMouseEvent } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './App.css';
 
 const EIA_KEY = import.meta.env.VITE_EIA_API_KEY as string;
+const BASE = import.meta.env.BASE_URL;
 
 const FUEL_COLORS: Record<string, string> = {
   COL: '#64748b', NG: '#f97316', NUC: '#a855f7', WND: '#06b6d4',
@@ -12,17 +13,38 @@ const FUEL_COLORS: Record<string, string> = {
   PEL: '#78716c', OIL: '#78716c', BAT: '#10b981',
 };
 
-
 const FUEL_LABELS: Record<string, string> = {
   COL: 'Coal', NG: 'Natural Gas', NUC: 'Nuclear', WND: 'Wind',
   SUN: 'Solar', WAT: 'Hydro', GEO: 'Geothermal', OTH: 'Other',
   PEL: 'Petroleum', OIL: 'Oil', BAT: 'Battery',
 };
 
+const PLANT_REGIONS = [
+  { id: 'northeast', label: 'Northeast (ISO-NE / NYISO / PJM East)', file: 'plants_northeast.geojson' },
+  { id: 'southeast', label: 'Southeast', file: 'plants_southeast.geojson' },
+  { id: 'midwest', label: 'Midwest (MISO / PJM West)', file: 'plants_midwest.geojson' },
+  { id: 'southcentral', label: 'South Central / ERCOT area', file: 'plants_southcentral.geojson' },
+  { id: 'west', label: 'West (CAISO / WECC)', file: 'plants_west.geojson' },
+] as const;
+
 interface FuelPoint { fueltype: string; value: number; period: string; }
 interface RegionPoint { respondent: string; type: string; value: number; period: string; }
-interface UtilityResult { id: string; name: string; slug: string; segment?: string; state?: string; customerCount?: number; }
-interface SearchResult { lat: number; lon: number; display_name: string; type: string; }
+interface UtilityResult { id: string; name: string; slug: string; segment?: string; customerCount?: number; }
+interface PlantProps {
+  Plant_Name?: string;
+  State?: string;
+  PrimSource?: string;
+  Total_MW?: number;
+  Install_MW?: number;
+  City?: string;
+  County?: string;
+  Utility_Na?: string;
+}
+interface PopupState {
+  lon: number;
+  lat: number;
+  props: PlantProps;
+}
 
 async function fetchEiaFuelMix(): Promise<FuelPoint[]> {
   if (!EIA_KEY) throw new Error('Missing VITE_EIA_API_KEY');
@@ -57,7 +79,7 @@ async function fetchEiaDemand(): Promise<RegionPoint[]> {
   return (json.response?.data || []) as RegionPoint[];
 }
 
-async function geocode(query: string): Promise<SearchResult | null> {
+async function geocode(query: string) {
   const url = new URL('https://nominatim.openstreetmap.org/search');
   url.searchParams.set('q', query);
   url.searchParams.set('format', 'json');
@@ -72,8 +94,7 @@ async function geocode(query: string): Promise<SearchResult | null> {
   return {
     lat: parseFloat(data[0].lat),
     lon: parseFloat(data[0].lon),
-    display_name: data[0].display_name,
-    type: data[0].type || 'place',
+    display_name: data[0].display_name as string,
   };
 }
 
@@ -100,20 +121,48 @@ function formatMWh(v: number): string {
 function formatTime(iso: string): string {
   try {
     const d = new Date(iso.includes('T') ? iso + (iso.length <= 13 ? ':00Z' : 'Z') : iso);
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+    return d.toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    });
   } catch {
     return iso;
   }
 }
 
+const plantCirclePaint = {
+  'circle-radius': [
+    'interpolate', ['linear'], ['coalesce', ['get', 'Total_MW'], 1],
+    1, 3, 50, 5, 200, 8, 1000, 12, 3000, 16,
+  ],
+  'circle-color': [
+    'match', ['downcase', ['coalesce', ['get', 'PrimSource'], 'other']],
+    'natural gas', '#f97316',
+    'coal', '#64748b',
+    'nuclear', '#a855f7',
+    'wind', '#06b6d4',
+    'solar', '#eab308',
+    'hydroelectric', '#3b82f6',
+    'petroleum', '#78716c',
+    'biomass', '#84cc16',
+    'batteries', '#10b981',
+    'geothermal', '#14b8a6',
+    '#94a3b8',
+  ],
+  'circle-opacity': 0.85,
+  'circle-stroke-width': 0.6,
+  'circle-stroke-color': '#0a0e14',
+} as const;
+
 export default function App() {
   const mapRef = useRef<MapRef>(null);
-  const [layers, setLayers] = useState({
-    demand: true,
-    plants: true,
-    lines: true,
-    utilities: false,
+  const [regionOn, setRegionOn] = useState<Record<string, boolean>>({
+    northeast: true,
+    southeast: true,
+    midwest: true,
+    southcentral: true,
+    west: true,
   });
+  const [layers, setLayers] = useState({ lines: true });
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<UtilityResult[]>([]);
   const [fuelData, setFuelData] = useState<FuelPoint[]>([]);
@@ -122,12 +171,13 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusOk, setStatusOk] = useState(true);
-  const [popupInfo, setPopupInfo] = useState<{ lat: number; lon: number; text: string } | null>(null);
+  const [plantData, setPlantData] = useState<Record<string, GeoJSON.FeatureCollection | null>>({});
+  const [linesGeojson, setLinesGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
-  const [plantsGeojson, setPlantsGeojson] = useState<any>(null);
-  const [linesGeojson, setLinesGeojson] = useState<any>(null);
+  const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
 
-  const loadData = useCallback(async () => {
+  const loadEia = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -136,8 +186,8 @@ export default function App() {
       setDemandData(demand);
       setLastUpdated(new Date());
       setStatusOk(true);
-    } catch (e: any) {
-      setError(e.message || 'Failed to fetch EIA data');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to fetch EIA data');
       setStatusOk(false);
     } finally {
       setLoading(false);
@@ -145,38 +195,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadData();
-    const id = setInterval(loadData, 15 * 60 * 1000);
+    loadEia();
+    const id = setInterval(loadEia, 15 * 60 * 1000);
     return () => clearInterval(id);
-  }, [loadData]);
+  }, [loadEia]);
 
   useEffect(() => {
-    const base = import.meta.env.BASE_URL;
-    fetch(`${base}data/plants_northeast.geojson`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Plants HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((gj) => setPlantsGeojson(gj))
-      .catch((e) => console.warn('Plants GeoJSON load failed', e));
-    fetch(`${base}data/lines_northeast.geojson`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Lines HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((gj) => setLinesGeojson(gj))
-      .catch((e) => console.warn('Lines GeoJSON load failed', e));
+    PLANT_REGIONS.forEach((r) => {
+      fetch(`${BASE}data/${r.file}`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`${r.id} ${res.status}`);
+          return res.json();
+        })
+        .then((gj) => setPlantData((prev) => ({ ...prev, [r.id]: gj })))
+        .catch((e) => console.warn('Plant region load failed', r.id, e));
+    });
+    fetch(`${BASE}data/lines_northeast.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setLinesGeojson(gj))
+      .catch((e) => console.warn('Lines load failed', e));
   }, []);
 
-  // Debounced utility search
   useEffect(() => {
     const t = setTimeout(async () => {
-      if (search.trim().length >= 2) {
-        const utils = await searchUtilities(search.trim());
-        setSearchResults(utils);
-      } else {
-        setSearchResults([]);
-      }
+      if (search.trim().length >= 2) setSearchResults(await searchUtilities(search.trim()));
+      else setSearchResults([]);
     }, 300);
     return () => clearTimeout(t);
   }, [search]);
@@ -205,34 +248,52 @@ export default function App() {
 
   const totalGen = useMemo(() => fuelMix.reduce((s, f) => s + f.value, 0), [fuelMix]);
 
-  const toggleLayer = (key: keyof typeof layers) => {
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const plantCount = useMemo(() => {
+    let n = 0;
+    for (const r of PLANT_REGIONS) {
+      if (regionOn[r.id] && plantData[r.id]) n += plantData[r.id]!.features.length;
+    }
+    return n;
+  }, [regionOn, plantData]);
 
   const handleSearch = async () => {
     const q = search.trim();
     if (!q) return;
     setSearchMsg('Searching…');
-    setPopupInfo(null);
-
-    // Try geocode first (ZIP, city, state, address)
+    setPlantPopup(null);
     const geo = await geocode(q);
     if (geo && mapRef.current) {
-      mapRef.current.flyTo({ center: [geo.lon, geo.lat], zoom: q.length <= 5 ? 10 : 8, duration: 1600 });
-      setPopupInfo({ lat: geo.lat, lon: geo.lon, text: geo.display_name });
+      mapRef.current.flyTo({ center: [geo.lon, geo.lat], zoom: q.length <= 5 ? 10 : 7, duration: 1600 });
       setSearchMsg(geo.display_name);
       return;
     }
-
-    // Fallback: first utility result
     if (searchResults.length > 0) {
       setSearchMsg(`Utility: ${searchResults[0].name}`);
-      // No coordinates on utility list; user can refine search
       return;
     }
-
     setSearchMsg('No results. Try a US ZIP, city, or state name.');
   };
+
+  const onMouseMove = useCallback((e: MapLayerMouseEvent) => {
+    const layersHit = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
+    const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
+    setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
+  }, []);
+
+  const onMapClick = useCallback((e: MapLayerMouseEvent) => {
+    const layersHit = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
+    const feat = e.features?.find((f) => layersHit.includes(f.layer?.id || ''));
+    if (feat && feat.geometry.type === 'Point') {
+      const coords = feat.geometry.coordinates as [number, number];
+      setPlantPopup({
+        lon: coords[0],
+        lat: coords[1],
+        props: (feat.properties || {}) as PlantProps,
+      });
+    } else {
+      setPlantPopup(null);
+    }
+  }, []);
 
   return (
     <div className="app">
@@ -253,6 +314,10 @@ export default function App() {
             <span className="kpi-value">{totalGen ? formatMWh(totalGen) : '—'}</span>
           </div>
           <div className="kpi">
+            <span className="kpi-label">Plants loaded</span>
+            <span className="kpi-value">{plantCount.toLocaleString()}</span>
+          </div>
+          <div className="kpi">
             <span className="kpi-label">Data Period</span>
             <span className="kpi-value" style={{ fontSize: '0.8rem' }}>
               {latestDemand?.period ? formatTime(latestDemand.period) : '—'}
@@ -265,7 +330,7 @@ export default function App() {
           <span className="last-updated">
             {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Waiting…'}
           </span>
-          <button className="btn btn-ghost" onClick={loadData} disabled={loading}>
+          <button className="btn btn-ghost" onClick={loadEia} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -289,7 +354,7 @@ export default function App() {
               <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 8 }}>{searchMsg}</p>
             )}
             {searchResults.length > 0 && (
-              <div style={{ marginTop: 10, maxHeight: 140, overflowY: 'auto' }}>
+              <div style={{ marginTop: 10, maxHeight: 120, overflowY: 'auto' }}>
                 <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 4 }}>UTILITIES (CommonGrid)</div>
                 {searchResults.map((u) => (
                   <div
@@ -302,7 +367,6 @@ export default function App() {
                     }}
                   >
                     {u.name}
-                    {u.segment && <span style={{ color: 'var(--text-muted)', marginLeft: 6, fontSize: '0.7rem' }}>{u.segment.replace(/_/g, ' ')}</span>}
                   </div>
                 ))}
               </div>
@@ -310,31 +374,34 @@ export default function App() {
           </div>
 
           <div className="sidebar-section">
-            <h3>Layers</h3>
+            <h3>Plant regions (by grid area)</h3>
             <div className="layer-list">
+              {PLANT_REGIONS.map((r) => (
+                <label className="layer-item" key={r.id}>
+                  <input
+                    type="checkbox"
+                    checked={!!regionOn[r.id]}
+                    onChange={() => setRegionOn((prev) => ({ ...prev, [r.id]: !prev[r.id] }))}
+                  />
+                  <span className="layer-swatch" style={{ background: '#eab308' }} />
+                  <span style={{ fontSize: '0.78rem' }}>{r.label}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                    {plantData[r.id] ? plantData[r.id]!.features.length : '…'}
+                  </span>
+                </label>
+              ))}
               <label className="layer-item">
-                <input type="checkbox" checked={layers.demand} onChange={() => toggleLayer('demand')} />
-                <span className="layer-swatch" style={{ background: '#22c55e' }} />
-                Demand / Generation (EIA)
-              </label>
-              <label className="layer-item">
-                <input type="checkbox" checked={layers.plants} onChange={() => toggleLayer('plants')} />
-                <span className="layer-swatch" style={{ background: '#eab308' }} />
-                Power plants — Northeast (PA DE MD NJ NY CT MA RI NH VT)
-              </label>
-              <label className="layer-item">
-                <input type="checkbox" checked={layers.lines} onChange={() => toggleLayer('lines')} />
+                <input
+                  type="checkbox"
+                  checked={layers.lines}
+                  onChange={() => setLayers((p) => ({ ...p, lines: !p.lines }))}
+                />
                 <span className="layer-swatch" style={{ background: '#94a3b8' }} />
-                Transmission lines — NE sample (open data)
-              </label>
-              <label className="layer-item">
-                <input type="checkbox" checked={layers.utilities} onChange={() => toggleLayer('utilities')} />
-                <span className="layer-swatch" style={{ background: '#3b82f6' }} />
-                Utility territories (CommonGrid)
+                Transmission lines — NE sample
               </label>
             </div>
             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
-              Plants & lines use public HIFLD-derived / open sources. Full national vector data is large; enable for denser views or add GeoJSON under <code>public/data/</code>.
+              Click any plant marker for details. Regions approximate major interconnections / ISO footprints.
             </p>
           </div>
 
@@ -350,7 +417,13 @@ export default function App() {
                   <span className="layer-swatch" style={{ background: FUEL_COLORS[f.fueltype] || FUEL_COLORS.OTH }} />
                   <span style={{ width: 90 }}>{FUEL_LABELS[f.fueltype] || f.fueltype}</span>
                   <div className="fuel-bar-bg">
-                    <div className="fuel-bar" style={{ width: `${Math.min(f.pct, 100)}%`, background: FUEL_COLORS[f.fueltype] || FUEL_COLORS.OTH }} />
+                    <div
+                      className="fuel-bar"
+                      style={{
+                        width: `${Math.min(f.pct, 100)}%`,
+                        background: FUEL_COLORS[f.fueltype] || FUEL_COLORS.OTH,
+                      }}
+                    />
                   </div>
                   <span className="fuel-pct">{f.pct.toFixed(1)}%</span>
                 </div>
@@ -359,14 +432,18 @@ export default function App() {
           </div>
 
           <div className="sidebar-section" style={{ flex: 1 }}>
-            <h3>About</h3>
+            <h3>About & limits</h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Legal public data only: EIA hourly RTO, CommonGrid (ODbL), Nominatim (ODbL), open plant/line archives.
-              No utility OMS scraping. Data lag ~1 hour. Auto-refresh 15 min.
+              Legal public data: EIA hourly RTO, CommonGrid (ODbL), Nominatim (ODbL), open plant archives (EIA/HIFLD-derived).
+              Auto-refresh 15 min. Data lag ~1 hour.
             </p>
             <p style={{ fontSize: '0.75rem', color: 'var(--warning)', lineHeight: 1.5, marginTop: 10 }}>
-              Live outages are not shown. National outage polygons require a licensed feed (e.g. PowerOutage.us API).
-              For outages, use utility maps or PowerOutage.us directly.
+              Live customer outages are not mapped here. County-level feeds (e.g. ODIN public status) and licensed APIs
+              (PowerOutage.us) exist separately. For outages use{' '}
+              <a href="https://poweroutage.us" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>
+                PowerOutage.us
+              </a>
+              {' '}or utility maps.
             </p>
           </div>
         </aside>
@@ -374,9 +451,12 @@ export default function App() {
         <div className="map-container">
           <Map
             ref={mapRef}
-            initialViewState={{ longitude: -74.5, latitude: 41.5, zoom: 5.5 }}
-            style={{ width: '100%', height: '100%' }}
+            initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
+            style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+            interactiveLayerIds={PLANT_REGIONS.map((r) => `plants-circle-${r.id}`)}
+            onClick={onMapClick}
+            onMouseMove={onMouseMove}
           >
             <NavigationControl position="top-right" />
 
@@ -392,80 +472,93 @@ export default function App() {
                       '500', '#ef4444',
                       '230', '#eab308',
                       '100-161', '#94a3b8',
-                      '69-99', '#64748b',
-                      '#475569'
+                      '#475569',
                     ],
-                    'line-width': [
-                      'interpolate', ['linear'], ['zoom'],
-                      4, 0.5,
-                      8, 1.5,
-                      12, 3
-                    ],
-                    'line-opacity': 0.8
+                    'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 8, 1.5, 12, 3],
+                    'line-opacity': 0.75,
                   }}
                 />
               </Source>
             )}
 
-            {layers.plants && plantsGeojson && (
-              <Source id="plants-ne" type="geojson" data={plantsGeojson}>
-                <Layer
-                  id="plants-circle"
-                  type="circle"
-                  paint={{
-                    'circle-radius': [
-                      'interpolate', ['linear'], ['coalesce', ['get', 'Total_MW'], 1],
-                      1, 3,
-                      50, 5,
-                      200, 8,
-                      1000, 12
-                    ],
-                    'circle-color': [
-                      'match', ['downcase', ['coalesce', ['get', 'PrimSource'], 'other']],
-                      'natural gas', '#f97316',
-                      'coal', '#64748b',
-                      'nuclear', '#a855f7',
-                      'wind', '#06b6d4',
-                      'solar', '#eab308',
-                      'hydroelectric', '#3b82f6',
-                      'petroleum', '#78716c',
-                      'biomass', '#84cc16',
-                      'batteries', '#10b981',
-                      'geothermal', '#14b8a6',
-                      '#94a3b8'
-                    ],
-                    'circle-opacity': 0.85,
-                    'circle-stroke-width': 0.5,
-                    'circle-stroke-color': '#0a0e14'
-                  }}
-                />
-              </Source>
+            {PLANT_REGIONS.map((r) =>
+              regionOn[r.id] && plantData[r.id] ? (
+                <Source key={r.id} id={`plants-${r.id}`} type="geojson" data={plantData[r.id]!}>
+                  <Layer id={`plants-circle-${r.id}`} type="circle" paint={plantCirclePaint as any} />
+                </Source>
+              ) : null
             )}
-            {popupInfo && (
+
+            {plantPopup && (
               <Popup
-                longitude={popupInfo.lon}
-                latitude={popupInfo.lat}
+                longitude={plantPopup.lon}
+                latitude={plantPopup.lat}
                 anchor="bottom"
-                onClose={() => setPopupInfo(null)}
+                onClose={() => setPlantPopup(null)}
                 closeOnClick={false}
+                maxWidth="320px"
               >
-                <div style={{ color: '#111', fontSize: 13, maxWidth: 220 }}>{popupInfo.text}</div>
+                <div className="plant-popup">
+                  <div className="plant-popup-title">{plantPopup.props.Plant_Name || 'Power plant'}</div>
+                  <div className="plant-popup-row">
+                    <span>Fuel</span>
+                    <strong style={{ textTransform: 'capitalize' }}>{plantPopup.props.PrimSource || '—'}</strong>
+                  </div>
+                  <div className="plant-popup-row">
+                    <span>Capacity</span>
+                    <strong>
+                      {plantPopup.props.Total_MW != null
+                        ? `${Number(plantPopup.props.Total_MW).toLocaleString()} MW`
+                        : '—'}
+                    </strong>
+                  </div>
+                  {plantPopup.props.Install_MW != null && (
+                    <div className="plant-popup-row">
+                      <span>Installed</span>
+                      <strong>{Number(plantPopup.props.Install_MW).toLocaleString()} MW</strong>
+                    </div>
+                  )}
+                  <div className="plant-popup-row">
+                    <span>Location</span>
+                    <strong>
+                      {[plantPopup.props.City, plantPopup.props.County, plantPopup.props.State]
+                        .filter(Boolean)
+                        .join(', ') || '—'}
+                    </strong>
+                  </div>
+                  <div className="plant-popup-row">
+                    <span>Utility</span>
+                    <strong>{plantPopup.props.Utility_Na || '—'}</strong>
+                  </div>
+                </div>
               </Popup>
             )}
           </Map>
 
           <div className="map-overlay-info">
-            <strong>Legal public data only</strong>
+            <strong>Click a plant</strong> for name, fuel, MW, utility, and location.
             <br />
-            Demand & fuel mix: U.S. EIA API · Search: Nominatim + CommonGrid · Infrastructure: open HIFLD-derived sources
+            Live outages not included (see About). EIA demand/fuel mix ~1 hr lag.
           </div>
 
           <div className="legend">
-            <h4>Fuel Mix</h4>
-            {Object.entries(FUEL_LABELS).slice(0, 8).map(([k, label]) => (
+            <h4>Plant fuel colors</h4>
+            {['natural gas', 'coal', 'nuclear', 'wind', 'solar', 'hydroelectric', 'petroleum', 'biomass'].map((k) => (
               <div className="legend-item" key={k}>
-                <span className="legend-swatch" style={{ background: FUEL_COLORS[k] }} />
-                {label}
+                <span
+                  className="legend-swatch"
+                  style={{
+                    background:
+                      k === 'natural gas' ? '#f97316' :
+                      k === 'coal' ? '#64748b' :
+                      k === 'nuclear' ? '#a855f7' :
+                      k === 'wind' ? '#06b6d4' :
+                      k === 'solar' ? '#eab308' :
+                      k === 'hydroelectric' ? '#3b82f6' :
+                      k === 'petroleum' ? '#78716c' : '#84cc16',
+                  }}
+                />
+                {k}
               </div>
             ))}
           </div>
