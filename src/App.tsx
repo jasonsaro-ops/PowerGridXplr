@@ -25,6 +25,8 @@ const PLANT_REGIONS = [
   { id: 'midwest', label: 'Midwest (MISO / PJM West)', file: 'plants_midwest.geojson' },
   { id: 'southcentral', label: 'South Central / ERCOT area', file: 'plants_southcentral.geojson' },
   { id: 'west', label: 'West (CAISO / WECC)', file: 'plants_west.geojson' },
+  { id: 'alaska', label: 'Alaska Interconnection', file: 'plants_alaska.geojson' },
+  { id: 'hawaii', label: 'Hawaii', file: 'plants_hawaii.geojson' },
 ] as const;
 
 interface FuelPoint { fueltype: string; value: number; period: string; }
@@ -310,8 +312,10 @@ export default function App() {
     midwest: true,
     southcentral: true,
     west: true,
+    alaska: true,
+    hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true });
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<UtilityResult[]>([]);
   const [fuelData, setFuelData] = useState<FuelPoint[]>([]);
@@ -322,6 +326,7 @@ export default function App() {
   const [statusOk, setStatusOk] = useState(true);
   const [plantData, setPlantData] = useState<Record<string, FeatureCollection | null>>({});
   const [linesGeojson, setLinesGeojson] = useState<FeatureCollection | null>(null);
+  const [interconnectGeojson, setInterconnectGeojson] = useState<FeatureCollection | null>(null);
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
@@ -376,10 +381,14 @@ export default function App() {
         .then((gj) => setPlantData((prev) => ({ ...prev, [r.id]: gj })))
         .catch((e) => console.warn('Plant region load failed', r.id, e));
     });
-    fetch(`${BASE}data/lines_northeast.geojson`)
+    fetch(`${BASE}data/lines_national_hv.geojson`)
       .then((res) => (res.ok ? res.json() : null))
       .then((gj) => gj && setLinesGeojson(gj))
       .catch((e) => console.warn('Lines load failed', e));
+    fetch(`${BASE}data/interconnections.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setInterconnectGeojson(gj))
+      .catch((e) => console.warn('Interconnect load failed', e));
   }, []);
 
   useEffect(() => {
@@ -563,11 +572,20 @@ export default function App() {
                   onChange={() => setLayers((p) => ({ ...p, lines: !p.lines }))}
                 />
                 <span className="layer-swatch" style={{ background: '#94a3b8' }} />
-                Transmission lines — NE sample
+                Transmission ≥230 kV (national HV sample)
+              </label>
+              <label className="layer-item">
+                <input
+                  type="checkbox"
+                  checked={layers.interconnects}
+                  onChange={() => setLayers((p) => ({ ...p, interconnects: !p.interconnects }))}
+                />
+                <span className="layer-swatch" style={{ background: '#3b82f6' }} />
+                Interconnection outlines (approx.)
               </label>
             </div>
             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
-              Click any plant marker for details. Regions approximate major interconnections / ISO footprints.
+              Click any plant for details. Interconnection outlines are approximate footprints (not official NERC boundaries). Transmission is a high-voltage (≥230 kV) open-data sample.
             </p>
           </div>
 
@@ -667,8 +685,31 @@ export default function App() {
           >
             <NavigationControl position="top-right" />
 
+            {layers.interconnects && interconnectGeojson && (
+              <Source id="interconnects" type="geojson" data={interconnectGeojson}>
+                <Layer
+                  id="interconnect-fill"
+                  type="fill"
+                  paint={{
+                    'fill-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+                    'fill-opacity': 0.06,
+                  }}
+                />
+                <Layer
+                  id="interconnect-outline"
+                  type="line"
+                  paint={{
+                    'line-color': ['coalesce', ['get', 'color'], '#3b82f6'],
+                    'line-width': 1.5,
+                    'line-opacity': 0.7,
+                    'line-dasharray': [2, 1],
+                  }}
+                />
+              </Source>
+            )}
+
             {layers.lines && linesGeojson && (
-              <Source id="lines-ne" type="geojson" data={linesGeojson}>
+              <Source id="lines-national" type="geojson" data={linesGeojson}>
                 <Layer
                   id="lines-line"
                   type="line"
@@ -677,12 +718,18 @@ export default function App() {
                       'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
                       '345', '#f59e0b',
                       '500', '#ef4444',
-                      '230', '#eab308',
-                      '100-161', '#94a3b8',
-                      '#475569',
+                      '735 AND ABOVE', '#ef4444',
+                      '220-287', '#94a3b8',
+                      'DC', '#a855f7',
+                      '#64748b',
                     ],
-                    'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 8, 1.5, 12, 3],
-                    'line-opacity': 0.75,
+                    'line-width': [
+                      'interpolate', ['linear'], ['zoom'],
+                      3, 0.4,
+                      6, 1.0,
+                      10, 2.2,
+                    ],
+                    'line-opacity': 0.7,
                   }}
                 />
               </Source>
