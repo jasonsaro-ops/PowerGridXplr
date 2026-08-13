@@ -29,6 +29,16 @@ const PLANT_REGIONS = [
   { id: 'hawaii', label: 'Hawaii', file: 'plants_hawaii.geojson' },
 ] as const;
 
+const SUB_REGIONS = [
+  { id: 'northeast', label: 'NE substations', file: 'substations_northeast.geojson' },
+  { id: 'southeast', label: 'SE substations', file: 'substations_southeast.geojson' },
+  { id: 'midwest', label: 'Midwest substations', file: 'substations_midwest.geojson' },
+  { id: 'southcentral', label: 'South Central substations', file: 'substations_southcentral.geojson' },
+  { id: 'west', label: 'West substations', file: 'substations_west.geojson' },
+  { id: 'alaska', label: 'Alaska substations', file: 'substations_alaska.geojson' },
+  { id: 'hawaii', label: 'Hawaii substations', file: 'substations_hawaii.geojson' },
+] as const;
+
 interface FuelPoint { fueltype: string; value: number; period: string; }
 interface RegionPoint { respondent: string; type: string; value: number; period: string; }
 interface UtilityResult { id: string; name: string; slug: string; segment?: string; customerCount?: number; }
@@ -413,7 +423,8 @@ export default function App() {
   const [plantData, setPlantData] = useState<Record<string, FeatureCollection | null>>({});
   const [linesGeojson, setLinesGeojson] = useState<FeatureCollection | null>(null);
   const [interconnectGeojson, setInterconnectGeojson] = useState<FeatureCollection | null>(null);
-  const [substationsGeojson, setSubstationsGeojson] = useState<FeatureCollection | null>(null);
+  const [subData, setSubData] = useState<Record<string, FeatureCollection | null>>({});
+  const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast: true, midwest: true, southcentral: true, west: true, alaska: true, hawaii: true });
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
@@ -490,10 +501,12 @@ export default function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((gj) => gj && setInterconnectGeojson(gj))
       .catch((e) => console.warn('Interconnect load failed', e));
-    fetch(`${BASE}data/substations_northeast.geojson`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((gj) => gj && setSubstationsGeojson(gj))
-      .catch((e) => console.warn('Substations load failed', e));
+    SUB_REGIONS.forEach((r) => {
+      fetch(`${BASE}data/${r.file}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((gj) => gj && setSubData((prev) => ({ ...prev, [r.id]: gj })))
+        .catch((e) => console.warn('Substations load failed', r.id, e));
+    });
   }, []);
 
   useEffect(() => {
@@ -537,6 +550,14 @@ export default function App() {
     })),
   }), [quakes]);
 
+  const subCount = useMemo(() => {
+    let n = 0;
+    for (const r of SUB_REGIONS) {
+      if (layers.substations && subRegionOn[r.id] && subData[r.id]) n += subData[r.id]!.features.length;
+    }
+    return n;
+  }, [layers.substations, subRegionOn, subData]);
+
   const plantCount = useMemo(() => {
     let n = 0;
     for (const r of PLANT_REGIONS) {
@@ -564,17 +585,18 @@ export default function App() {
   };
 
   const onMouseMove = useCallback((e: MapLayerMouseEvent) => {
-    const layersHit = [...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), 'subs-circle'];
+    const layersHit = [...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`)];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
   }, []);
 
   const onMapClick = useCallback((e: MapLayerMouseEvent) => {
     const plantLayers = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
-    const feat = e.features?.find((f) => plantLayers.includes(f.layer?.id || '') || f.layer?.id === 'subs-circle');
+    const subLayers = SUB_REGIONS.map((r) => `subs-circle-${r.id}`);
+    const feat = e.features?.find((f) => plantLayers.includes(f.layer?.id || '') || subLayers.includes(f.layer?.id || ''));
     if (feat && feat.geometry.type === 'Point') {
       const coords = feat.geometry.coordinates as [number, number];
-      if (feat.layer?.id === 'subs-circle') {
+      if (feat.layer?.id?.startsWith('subs-circle-')) {
         setPlantPopup({
           lon: coords[0],
           lat: coords[1],
@@ -714,11 +736,24 @@ export default function App() {
                   onChange={() => setLayers((p) => ({ ...p, substations: !p.substations }))}
                 />
                 <span className="layer-swatch" style={{ background: '#22d3ee' }} />
-                Substations — Northeast
+                Substations (all regions)
                 <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {substationsGeojson ? substationsGeojson.features.length : '…'}
+                  {subCount.toLocaleString()}
                 </span>
               </label>
+              {layers.substations && SUB_REGIONS.map((r) => (
+                <label className="layer-item" key={`subtog-${r.id}`} style={{ paddingLeft: 20 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!subRegionOn[r.id]}
+                    onChange={() => setSubRegionOn((prev) => ({ ...prev, [r.id]: !prev[r.id] }))}
+                  />
+                  <span style={{ fontSize: '0.72rem' }}>{r.label}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                    {subData[r.id] ? subData[r.id]!.features.length : '…'}
+                  </span>
+                </label>
+              ))}
             </div>
             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
               Click any plant for details. Interconnection outlines are approximate footprints (not official NERC boundaries). Transmission is a high-voltage (≥230 kV) open-data sample.
@@ -860,7 +895,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), 'subs-circle']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`)]}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -897,20 +932,42 @@ export default function App() {
                   paint={{
                     'line-color': [
                       'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
-                      '345', '#f59e0b',
-                      '500', '#ef4444',
+                      '345', '#fbbf24',
+                      '500', '#f87171',
                       '735 AND ABOVE', '#ef4444',
-                      '220-287', '#94a3b8',
-                      'DC', '#a855f7',
+                      '220-287', '#38bdf8',
+                      'DC', '#c084fc',
                       '#64748b',
                     ],
                     'line-width': [
                       'interpolate', ['linear'], ['zoom'],
-                      3, 0.4,
-                      6, 1.0,
-                      10, 2.2,
+                      3, [
+                        'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
+                        '500', 1.2,
+                        '735 AND ABOVE', 1.4,
+                        '345', 0.9,
+                        'DC', 1.0,
+                        0.5
+                      ],
+                      7, [
+                        'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
+                        '500', 2.8,
+                        '735 AND ABOVE', 3.2,
+                        '345', 2.0,
+                        'DC', 2.2,
+                        1.2
+                      ],
+                      11, [
+                        'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
+                        '500', 4.5,
+                        '735 AND ABOVE', 5.5,
+                        '345', 3.2,
+                        'DC', 3.5,
+                        2.0
+                      ],
                     ],
-                    'line-opacity': 0.7,
+                    'line-opacity': 0.85,
+                    'line-blur': 0.2,
                   }}
                 />
               </Source>
@@ -925,32 +982,36 @@ export default function App() {
             )}
 
 
-            {layers.substations && substationsGeojson && (
-              <Source id="subs-ne" type="geojson" data={substationsGeojson}>
-                <Layer
-                  id="subs-circle"
-                  type="circle"
-                  minzoom={6}
-                  paint={{
-                    'circle-radius': [
-                      'interpolate', ['linear'], ['zoom'],
-                      6, 2,
-                      10, 4,
-                      13, 7,
-                    ],
-                    'circle-color': [
-                      'match', ['coalesce', ['get', 'TYPE'], ''],
-                      'SUBSTATION', '#22d3ee',
-                      'TAP', '#67e8f9',
-                      'RISER', '#a5f3fc',
-                      '#22d3ee',
-                    ],
-                    'circle-opacity': 0.8,
-                    'circle-stroke-width': 0.4,
-                    'circle-stroke-color': '#0a0e14',
-                  }}
-                />
-              </Source>
+            {layers.substations && SUB_REGIONS.map((r) =>
+              subRegionOn[r.id] && subData[r.id] ? (
+                <Source key={`sub-${r.id}`} id={`subs-${r.id}`} type="geojson" data={subData[r.id]!}>
+                  <Layer
+                    id={`subs-circle-${r.id}`}
+                    type="circle"
+                    minzoom={5}
+                    paint={{
+                      'circle-radius': [
+                        'interpolate', ['linear'], ['zoom'],
+                        5, 1.5,
+                        8, 3,
+                        12, 6,
+                      ],
+                      'circle-color': [
+                        'match', ['downcase', ['coalesce', ['get', 'TYPE'], 'substation']],
+                        'substation', '#22d3ee',
+                        'tap', '#67e8f9',
+                        'riser', '#a5f3fc',
+                        'transmission', '#06b6d4',
+                        'distribution', '#67e8f9',
+                        '#22d3ee',
+                      ],
+                      'circle-opacity': 0.85,
+                      'circle-stroke-width': 0.4,
+                      'circle-stroke-color': '#0a0e14',
+                    }}
+                  />
+                </Source>
+              ) : null
             )}
 
             {showQuakes && quakes.length > 0 && (
@@ -1066,25 +1127,42 @@ export default function App() {
           </div>
 
           <div className="legend">
-            <h4>Plant fuel colors</h4>
-            {['natural gas', 'coal', 'nuclear', 'wind', 'solar', 'hydroelectric', 'petroleum', 'biomass'].map((k) => (
+            <h4>Map legend</h4>
+            <div className="legend-section">Plants (fuel)</div>
+            {[
+              ['natural gas', '#f97316'], ['coal', '#64748b'], ['nuclear', '#a855f7'],
+              ['wind', '#06b6d4'], ['solar', '#eab308'], ['hydro', '#3b82f6'],
+              ['petroleum', '#78716c'], ['biomass', '#84cc16'],
+            ].map(([k, c]) => (
               <div className="legend-item" key={k}>
-                <span
-                  className="legend-swatch"
-                  style={{
-                    background:
-                      k === 'natural gas' ? '#f97316' :
-                      k === 'coal' ? '#64748b' :
-                      k === 'nuclear' ? '#a855f7' :
-                      k === 'wind' ? '#06b6d4' :
-                      k === 'solar' ? '#eab308' :
-                      k === 'hydroelectric' ? '#3b82f6' :
-                      k === 'petroleum' ? '#78716c' : '#84cc16',
-                  }}
-                />
+                <span className="legend-swatch" style={{ background: c }} />
                 {k}
               </div>
             ))}
+            <div className="legend-section">Transmission (kV class)</div>
+            {[
+              ['≥500 / 735+', '#f87171'], ['345', '#fbbf24'], ['220–287', '#38bdf8'],
+              ['DC', '#c084fc'], ['other HV', '#64748b'],
+            ].map(([k, c]) => (
+              <div className="legend-item" key={k}>
+                <span className="legend-line" style={{ background: c }} />
+                {k}
+              </div>
+            ))}
+            <div className="legend-section">Substations</div>
+            <div className="legend-item">
+              <span className="legend-swatch" style={{ background: '#22d3ee' }} />
+              Substation / tap
+            </div>
+            <div className="legend-section">Other</div>
+            <div className="legend-item">
+              <span className="legend-line" style={{ background: '#3b82f6', height: 2, borderStyle: 'dashed' }} />
+              Interconnection outline
+            </div>
+            <div className="legend-item">
+              <span className="legend-swatch" style={{ background: '#f97316' }} />
+              Quake M4.5+
+            </div>
           </div>
         </div>
       </div>

@@ -406,3 +406,27 @@ a {
   color: #f97316;
   flex-shrink: 0;
 }
+
+.legend-section {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #94a3b8);
+  margin: 8px 0 4px;
+  font-weight: 600;
+}
+
+.legend-line {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.legend {
+  max-height: 50vh;
+  overflow-y: auto;
+}
