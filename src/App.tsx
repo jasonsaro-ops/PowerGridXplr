@@ -99,6 +99,7 @@ interface PriceRow {
 interface DetailMeta {
   label: string;
   value: string;
+  category?: string;
 }
 
 interface DetailState {
@@ -941,12 +942,14 @@ export default function App() {
         subtitle: r.fullName || r.name,
         iconKind: r.kind,
         meta: [
-          { label: 'Latest value', value: `${r.value} ${r.unit}` },
-          { label: 'Period', value: r.period || '—' },
-          { label: 'Unit', value: r.unit },
-          { label: 'Series id', value: r.seriesKey || r.id },
-          { label: 'Category', value: r.kind || 'other' },
-          { label: 'Source', value: 'U.S. Energy Information Administration (EIA)' },
+          { category: 'Value', label: 'Latest', value: `${r.value} ${r.unit}` },
+          { category: 'Value', label: 'Unit', value: r.unit },
+          { category: 'Value', label: 'Period', value: r.period || '—' },
+          { category: 'Identity', label: 'Series id', value: r.seriesKey || r.id },
+          { category: 'Identity', label: 'Product class', value: r.kind || 'other' },
+          { category: 'Identity', label: 'Full name', value: r.fullName || r.name },
+          { category: 'Source', label: 'Publisher', value: 'U.S. EIA' },
+          { category: 'Source', label: 'API', value: 'Open Data API v2' },
         ],
         historyLabel: r.seriesKey?.startsWith('elec:')
           ? 'Monthly history (up to 3 years)'
@@ -1065,6 +1068,34 @@ export default function App() {
     const varNeed = score >= 70 ? 'Elevated support need' : score >= 35 ? 'Monitor' : 'Nominal';
     return { score, level, color, reasons, varNeed };
   }, [nwsAlerts, odinUtils, latestDemand, totalGen, quakes]);
+
+  const reliabilityMetrics = useMemo(() => {
+    const outCustomers = odinUtils.reduce((s, u) => s + u.totalOutages, 0);
+    const utilReporting = odinUtils.length;
+    const severeWx = nwsAlerts.filter((a) => a.severity === 'Extreme' || a.severity === 'Severe').length;
+    const gen = totalGen || 0;
+    const dem = latestDemand ? Number(latestDemand.value) : 0;
+    const reserveProxy = gen > 0 && dem > 0 ? ((gen - dem) / gen) * 100 : null;
+    const baCount = baDemand.length;
+    const plantN = plantCount;
+    // Composite reliability index 0-100 (higher = more stressed) from public proxies only
+    let stress = gridStress.score;
+    const availabilityProxy = outCustomers > 0
+      ? Math.max(0, 100 - Math.min(40, outCustomers / 5000))
+      : 98;
+    return {
+      outCustomers,
+      utilReporting,
+      severeWx,
+      reserveProxy,
+      baCount,
+      plantN,
+      stress,
+      availabilityProxy,
+      statusLabel: stress >= 70 ? 'Stressed' : stress >= 35 ? 'Watch' : 'Stable',
+      statusColor: stress >= 70 ? '#ef4444' : stress >= 35 ? '#f59e0b' : '#22c55e',
+    };
+  }, [odinUtils, nwsAlerts, totalGen, latestDemand, baDemand.length, plantCount, gridStress.score]);
 
   const lineFilterExpr = useMemo(() => {
     const enabledClasses: string[] = [];
@@ -1454,11 +1485,12 @@ export default function App() {
                         subtitle: b.name,
                         iconKind: 'power',
                         meta: [
-                          { label: 'Demand', value: formatMWh(b.value) },
-                          { label: 'Period', value: b.period },
-                          { label: 'BA code', value: b.code },
-                          { label: 'Type', value: 'Hourly demand (EIA-930)' },
-                          { label: 'Source', value: 'EIA Open Data · RTO region-data' },
+                          { category: 'Operations', label: 'Demand', value: formatMWh(b.value) },
+                          { category: 'Operations', label: 'Period', value: b.period },
+                          { category: 'Identity', label: 'BA code', value: b.code },
+                          { category: 'Identity', label: 'BA name', value: b.name },
+                          { category: 'Source', label: 'Series', value: 'Hourly demand (EIA-930)' },
+                          { category: 'Source', label: 'Publisher', value: 'EIA RTO region-data' },
                         ],
                         historyLabel: 'Hourly demand (last ~48 hours)',
                         source: 'EIA API v2',
@@ -1496,13 +1528,14 @@ export default function App() {
                       title: `M${q.mag.toFixed(1)} earthquake`,
                       subtitle: q.place,
                       meta: [
-                        { label: 'Magnitude', value: q.mag.toFixed(1) },
-                        { label: 'Depth', value: `${q.depth.toFixed(1)} km` },
-                        { label: 'Time', value: q.time ? new Date(q.time).toLocaleString() : '—' },
-                        { label: 'Latitude', value: q.lat.toFixed(4) },
-                        { label: 'Longitude', value: q.lon.toFixed(4) },
-                        { label: 'Event id', value: q.id },
-                        { label: 'Source', value: 'USGS earthquake feed (M4.5+ 24h)' },
+                        { category: 'Event', label: 'Magnitude', value: q.mag.toFixed(1) },
+                        { category: 'Event', label: 'Depth', value: `${q.depth.toFixed(1)} km` },
+                        { category: 'Event', label: 'Time', value: q.time ? new Date(q.time).toLocaleString() : '—' },
+                        { category: 'Location', label: 'Place', value: q.place },
+                        { category: 'Location', label: 'Latitude', value: q.lat.toFixed(4) },
+                        { category: 'Location', label: 'Longitude', value: q.lon.toFixed(4) },
+                        { category: 'Source', label: 'Event id', value: q.id },
+                        { category: 'Source', label: 'Publisher', value: 'USGS M4.5+ 24h feed' },
                       ],
                       source: 'https://earthquake.usgs.gov',
                       notes: 'Shown for situational awareness near infrastructure. Not a grid sensor.',
@@ -1539,13 +1572,14 @@ export default function App() {
                       title: a.event,
                       subtitle: a.headline || a.area,
                       meta: [
-                        { label: 'Severity', value: a.severity },
-                        { label: 'Urgency', value: a.urgency || '—' },
-                        { label: 'Area', value: a.area || '—' },
-                        { label: 'Onset', value: a.onset ? new Date(a.onset).toLocaleString() : '—' },
-                        { label: 'Ends', value: a.ends ? new Date(a.ends).toLocaleString() : '—' },
-                        { label: 'Alert id', value: a.id },
-                        { label: 'Source', value: 'NOAA / NWS api.weather.gov' },
+                        { category: 'Hazard', label: 'Severity', value: a.severity },
+                        { category: 'Hazard', label: 'Urgency', value: a.urgency || '—' },
+                        { category: 'Hazard', label: 'Event', value: a.event },
+                        { category: 'Geography', label: 'Area', value: a.area || '—' },
+                        { category: 'Timing', label: 'Onset', value: a.onset ? new Date(a.onset).toLocaleString() : '—' },
+                        { category: 'Timing', label: 'Ends', value: a.ends ? new Date(a.ends).toLocaleString() : '—' },
+                        { category: 'Source', label: 'Alert id', value: a.id },
+                        { category: 'Source', label: 'Publisher', value: 'NOAA / NWS' },
                       ],
                       source: 'National Weather Service',
                       notes: 'Grid-relevant filter applied. Official forecasts remain with NWS products.',
@@ -1582,11 +1616,12 @@ export default function App() {
                       title: u.name,
                       subtitle: 'ODIN utility outage snapshot',
                       meta: [
-                        { label: 'Customers out', value: u.totalOutages.toLocaleString() },
-                        { label: 'Resolution', value: u.dataResolution || '—' },
-                        { label: 'Received', value: u.receivedDate || '—' },
-                        { label: 'EIA utility id', value: u.eiaId || '—' },
-                        { label: 'Source', value: 'ORNL ODIN public status' },
+                        { category: 'Outage', label: 'Customers out', value: u.totalOutages.toLocaleString() },
+                        { category: 'Outage', label: 'Resolution', value: u.dataResolution || '—' },
+                        { category: 'Outage', label: 'Received', value: u.receivedDate || '—' },
+                        { category: 'Identity', label: 'Utility', value: u.name },
+                        { category: 'Identity', label: 'EIA utility id', value: u.eiaId || '—' },
+                        { category: 'Source', label: 'Publisher', value: 'ORNL ODIN' },
                       ],
                       source: 'https://odin.ornl.gov',
                       notes: 'Not full national coverage. Participating utilities only. Not a substitute for utility OMS maps.',
@@ -1991,6 +2026,56 @@ export default function App() {
             </p>
           </div>
           <div className="sidebar-section">
+            <h3>Grid reliability (proxy)</h3>
+            <div className="stress-level" style={{ color: reliabilityMetrics.statusColor }}>
+              {reliabilityMetrics.statusLabel}
+            </div>
+            <div className="metric-grid">
+              <div className="metric-card">
+                <div className="m-label">Stress index</div>
+                <div className="m-val" style={{ color: reliabilityMetrics.statusColor }}>
+                  {reliabilityMetrics.stress}/100
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">Avail. proxy</div>
+                <div className="m-val">{reliabilityMetrics.availabilityProxy.toFixed(0)}%</div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">Gen−demand</div>
+                <div className="m-val">
+                  {reliabilityMetrics.reserveProxy != null
+                    ? `${reliabilityMetrics.reserveProxy.toFixed(1)}%`
+                    : '—'}
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">ODIN out</div>
+                <div className="m-val">{reliabilityMetrics.outCustomers.toLocaleString()}</div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">Utils reporting</div>
+                <div className="m-val">{reliabilityMetrics.utilReporting}</div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">Severe NWS</div>
+                <div className="m-val">{reliabilityMetrics.severeWx}</div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">BAs tracked</div>
+                <div className="m-val">{reliabilityMetrics.baCount}</div>
+              </div>
+              <div className="metric-card">
+                <div className="m-label">Plants loaded</div>
+                <div className="m-val">{reliabilityMetrics.plantN.toLocaleString()}</div>
+              </div>
+            </div>
+            <p className="disclaimer-tiny">
+              Composite from public EIA demand/gen, ODIN outage counts, and NWS alerts—not NERC formal reliability metrics or SCADA SAIFI/SAIDI.
+            </p>
+          </div>
+
+          <div className="sidebar-section">
             <h3>Voltage sag risk (proxy)</h3>
             <div className="stress-level" style={{ color: gridStress.color }}>{gridStress.level} · {gridStress.score}/100</div>
             <div className="stress-meter">
@@ -2046,18 +2131,27 @@ export default function App() {
             </div>
             <div className="detail-body">
               <h4>Metadata</h4>
-              {detail.meta.map((m) => (
-                <div className="detail-meta-row" key={m.label}>
-                  <span>{m.label}</span>
-                  <strong>{m.value}</strong>
-                </div>
-              ))}
-              {detail.source && (
-                <div className="detail-meta-row">
-                  <span>Feed</span>
-                  <strong>{detail.source}</strong>
-                </div>
-              )}
+              {(() => {
+                const groups: Record<string, DetailMeta[]> = {};
+                for (const m of detail.meta) {
+                  const cat = m.category || 'General';
+                  (groups[cat] ||= []).push(m);
+                }
+                if (detail.source) {
+                  (groups['Source'] ||= []).push({ label: 'Feed', value: detail.source, category: 'Source' });
+                }
+                return Object.entries(groups).map(([cat, rows]) => (
+                  <div key={cat}>
+                    <div className="detail-cat">{cat}</div>
+                    {rows.map((m) => (
+                      <div className="detail-meta-row" key={cat + m.label}>
+                        <span>{m.label}</span>
+                        <strong>{m.value}</strong>
+                      </div>
+                    ))}
+                  </div>
+                ));
+              })()}
               {detail.notes && <p className="disclaimer-tiny">{detail.notes}</p>}
               <h4>
                 History {detailLoading ? '· loading…' : detail.historyLabel ? `· ${detail.historyLabel}` : ''}
