@@ -74,12 +74,21 @@ interface SubstationProps {
   LINES?: number;
 }
 
+interface LineProps {
+  VOLTAGE?: number;
+  VOLT_CLASS?: string;
+  TYPE?: string;
+  STATUS?: string;
+  OWNER?: string;
+}
+
 interface PopupState {
   lon: number;
   lat: number;
-  kind: 'plant' | 'substation';
+  kind: 'plant' | 'substation' | 'line';
   plant?: PlantProps;
   substation?: SubstationProps;
+  line?: LineProps;
 }
 
 interface NwsAlert {
@@ -585,7 +594,11 @@ export default function App() {
   };
 
   const onMouseMove = useCallback((e: MapLayerMouseEvent) => {
-    const layersHit = [...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`)];
+    const layersHit = [
+      ...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`),
+      ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`),
+      'lines-hit',
+    ];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
   }, []);
@@ -593,22 +606,41 @@ export default function App() {
   const onMapClick = useCallback((e: MapLayerMouseEvent) => {
     const plantLayers = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
     const subLayers = SUB_REGIONS.map((r) => `subs-circle-${r.id}`);
-    const feat = e.features?.find((f) => plantLayers.includes(f.layer?.id || '') || subLayers.includes(f.layer?.id || ''));
-    if (feat && feat.geometry.type === 'Point') {
+    const feat = e.features?.find(
+      (f) =>
+        plantLayers.includes(f.layer?.id || '') ||
+        subLayers.includes(f.layer?.id || '') ||
+        f.layer?.id === 'lines-hit'
+    );
+    if (!feat) {
+      setPlantPopup(null);
+      return;
+    }
+    const props = (feat.properties || {}) as Record<string, unknown>;
+    if (feat.layer?.id === 'lines-hit') {
+      setPlantPopup({
+        lon: e.lngLat.lng,
+        lat: e.lngLat.lat,
+        kind: 'line',
+        line: props as unknown as LineProps,
+      });
+      return;
+    }
+    if (feat.geometry.type === 'Point') {
       const coords = feat.geometry.coordinates as [number, number];
       if (feat.layer?.id?.startsWith('subs-circle-')) {
         setPlantPopup({
           lon: coords[0],
           lat: coords[1],
           kind: 'substation',
-          substation: (feat.properties || {}) as SubstationProps,
+          substation: props as unknown as SubstationProps,
         });
       } else {
         setPlantPopup({
           lon: coords[0],
           lat: coords[1],
           kind: 'plant',
-          plant: (feat.properties || {}) as PlantProps,
+          plant: props as unknown as PlantProps,
         });
       }
     } else {
@@ -895,7 +927,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`)]}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -926,6 +958,20 @@ export default function App() {
 
             {layers.lines && linesGeojson && (
               <Source id="lines-national" type="geojson" data={linesGeojson}>
+                <Layer
+                  id="lines-hit"
+                  type="line"
+                  paint={{
+                    'line-color': '#000000',
+                    'line-opacity': 0,
+                    'line-width': [
+                      'interpolate', ['linear'], ['zoom'],
+                      3, 8,
+                      8, 14,
+                      12, 20,
+                    ],
+                  }}
+                />
                 <Layer
                   id="lines-line"
                   type="line"
@@ -1049,7 +1095,35 @@ export default function App() {
                 closeOnClick={false}
                 maxWidth="320px"
               >
-                {plantPopup.kind === 'substation' && plantPopup.substation ? (
+                {plantPopup.kind === 'line' && plantPopup.line ? (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">Transmission line</div>
+                    <div className="plant-popup-row">
+                      <span>Voltage</span>
+                      <strong>
+                        {plantPopup.line.VOLTAGE != null
+                          ? `${Number(plantPopup.line.VOLTAGE)} kV`
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Class</span>
+                      <strong>{plantPopup.line.VOLT_CLASS || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Type</span>
+                      <strong>{plantPopup.line.TYPE || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Status</span>
+                      <strong>{plantPopup.line.STATUS || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Owner</span>
+                      <strong>{plantPopup.line.OWNER || '—'}</strong>
+                    </div>
+                  </div>
+                ) : plantPopup.kind === 'substation' && plantPopup.substation ? (
                   <div className="plant-popup">
                     <div className="plant-popup-title">{plantPopup.substation.NAME || 'Substation'}</div>
                     <div className="plant-popup-row">
@@ -1121,7 +1195,7 @@ export default function App() {
           </Map>
 
           <div className="map-overlay-info">
-            <strong>Click a plant or NE substation</strong> for details.
+            <strong>Click a plant, substation, or transmission line</strong> for details.
             <br />
             Live outages not included (see About). EIA demand/fuel mix ~1 hr lag.
           </div>
