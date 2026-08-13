@@ -508,17 +508,20 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
     if (res.ok) {
       const json = await res.json();
       const data = (json.response?.data || []) as Array<Record<string, unknown>>;
-      const want = /export|citygate|electric power|industrial|residential/i;
+      const want = /citygate|electric power price|industrial price|residential/i;
+      const skip = /percent|% of|sold to/i;
       const latest: Record<string, Record<string, unknown>> = {};
       for (const r of data) {
         const proc = String(r['process-name'] || r.process || '');
-        if (!want.test(proc) || r.value == null) continue;
+        const units = String(r.units || '');
+        if (!want.test(proc) || skip.test(proc) || r.value == null) continue;
+        if (units.includes('%')) continue;
         if (!latest[proc]) latest[proc] = r;
       }
       for (const [proc, r] of Object.entries(latest)) {
         rows.push({
           id: `ng-${proc}`.slice(0, 40),
-          name: `Natural gas · ${proc}`,
+          name: `Natural gas · ${proc.replace(/ Price$/i, '')}`,
           value: Number(r.value).toFixed(2),
           unit: String(r.units || '$/Mcf'),
           period: String(r.period || ''),
@@ -659,6 +662,7 @@ export default function App() {
   const [showQuakes, setShowQuakes] = useState(true);
   const [energyPrices, setEnergyPrices] = useState<PriceRow[]>([]);
   const [pricesUpdated, setPricesUpdated] = useState<Date | null>(null);
+  const [rightOpen, setRightOpen] = useState(true);
   const [pmuStatus] = useState<{ mode: string; detail: string }>({
     mode: 'unavailable',
     detail: import.meta.env.VITE_PMU_ENDPOINT
@@ -951,7 +955,26 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <div className="logo">
+        <div
+          className="logo"
+          title="Reset map & refresh"
+          onClick={() => {
+            mapRef.current?.flyTo({ center: [-98.5, 39.5], zoom: 3.6, duration: 1200 });
+            setPlantPopup(null);
+            loadLive();
+            loadPrices();
+          }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              mapRef.current?.flyTo({ center: [-98.5, 39.5], zoom: 3.6, duration: 1200 });
+              setPlantPopup(null);
+              loadLive();
+              loadPrices();
+            }
+          }}
+        >
           <div className="logo-icon">⚡</div>
           PowerGridXplr
           <span className="sub">US Power Grid Explorer</span>
@@ -1608,52 +1631,19 @@ export default function App() {
           </Map>
 
           <div className="map-overlay-info">
-            <strong>Click a plant, substation, or transmission line</strong> for details.
-            <br />
-            Live outages not included (see About). EIA demand/fuel mix ~1 hr lag.
+            Click plant / line / sub for details
           </div>
 
-          <div className="legend legend-map-hidden">
-            <h4>Map legend</h4>
-            <div className="legend-section">Plants (fuel)</div>
-            {[
-              ['natural gas', '#f97316'], ['coal', '#64748b'], ['nuclear', '#a855f7'],
-              ['wind', '#06b6d4'], ['solar', '#eab308'], ['hydro', '#3b82f6'],
-              ['petroleum', '#78716c'], ['biomass', '#84cc16'],
-            ].map(([k, c]) => (
-              <div className="legend-item" key={k}>
-                <span className="legend-swatch" style={{ background: c }} />
-                {k}
-              </div>
-            ))}
-            <div className="legend-section">Transmission (kV class)</div>
-            {[
-              ['≥500 / 735+', '#f87171'], ['345', '#fbbf24'], ['220–287', '#38bdf8'],
-              ['DC', '#c084fc'], ['other HV', '#64748b'],
-            ].map(([k, c]) => (
-              <div className="legend-item" key={k}>
-                <span className="legend-line" style={{ background: c }} />
-                {k}
-              </div>
-            ))}
-            <div className="legend-section">Substations</div>
-            <div className="legend-item">
-              <span className="legend-swatch" style={{ background: '#22d3ee' }} />
-              Substation / tap
-            </div>
-            <div className="legend-section">Other</div>
-            <div className="legend-item">
-              <span className="legend-line" style={{ background: '#3b82f6', height: 2, borderStyle: 'dashed' }} />
-              Interconnection outline
-            </div>
-            <div className="legend-item">
-              <span className="legend-swatch" style={{ background: '#f97316' }} />
-              Quake M4.5+
-            </div>
-          </div>
-        </div>
+        <button
+          type="button"
+          className="rail-toggle"
+          style={{ right: rightOpen ? 258 : 8 }}
+          onClick={() => setRightOpen((v) => !v)}
+        >
+          {rightOpen ? 'Hide prices ›' : '‹ Prices & risk'}
+        </button>
 
-        <aside className="sidebar-right">
+        <aside className={`sidebar-right${rightOpen ? '' : ' collapsed'}`}>
           <div className="sidebar-section">
             <h3>Energy prices (EIA)</h3>
             <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 8 }}>
@@ -1689,9 +1679,7 @@ export default function App() {
             </div>
             <p className="disclaimer-tiny">{pmuStatus.detail}</p>
             <p className="disclaimer-tiny">
-              Live US utility PMU data is operational (IEEE C37.118) and not published as a free national API.
-              Optional: set VITE_PMU_ENDPOINT in build secrets when you have a licensed PDC feed.
-              Open historical libraries (e.g. PNNL event sets / GESL) are for research, not real-time EOC telemetry.
+              No free national live PMU API. Optional VITE_PMU_ENDPOINT for licensed PDC feeds.
             </p>
           </div>
 
