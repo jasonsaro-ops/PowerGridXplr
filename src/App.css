@@ -692,11 +692,35 @@ a {
 }
 
 .price-icon {
-  display: inline-block;
-  width: 1.1em;
-  margin-right: 4px;
-  text-align: center;
-  opacity: 0.9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+.price-svg {
+  display: block;
+}
+
+.price-svg-power { color: #38bdf8; }
+.price-svg-gas { color: #fb923c; }
+.price-svg-crude { color: #a8a29e; }
+.price-svg-gaso { color: #fbbf24; }
+.price-svg-diesel { color: #f59e0b; }
+.price-svg-heat { color: #f87171; }
+.price-svg-jet { color: #818cf8; }
+
+.sidebar-right .price-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  border-radius: 3px;
 }
 
 .sidebar-right .price-row {

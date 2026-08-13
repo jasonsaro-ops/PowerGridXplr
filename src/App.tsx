@@ -91,7 +91,7 @@ interface PriceRow {
   value: string;
   unit: string;
   period: string;
-  icon?: string;
+  kind?: 'power' | 'gas' | 'crude' | 'gasoline' | 'diesel' | 'heat' | 'jet' | 'other';
   fullName?: string;
 }
 
@@ -347,13 +347,13 @@ const MAJOR_BAS = ['PJM', 'MISO', 'ERCO', 'CISO', 'NYIS', 'ISNE', 'SWPP', 'SOCO'
 
 
 
-const PET_META: Record<string, { name: string; icon: string; full: string }> = {
-  RWTC: { name: 'WTI crude', icon: '🛢', full: 'Cushing OK WTI crude oil spot $/barrel' },
-  RBRTE: { name: 'Brent crude', icon: '🛢', full: 'Europe Brent crude oil spot $/barrel' },
-  EER_EPMRU_PF4_RGC_DPG: { name: 'Gasoline', icon: '⛽', full: 'US Gulf Coast conventional gasoline regular' },
-  EER_EPD2DXL0_PF4_RGC_DPG: { name: 'Diesel ULSD', icon: '🚛', full: 'US Gulf Coast ultra-low sulfur diesel' },
-  EER_EPD2F_PF4_Y35NY_DPG: { name: 'Heating oil', icon: '🏠', full: 'NY Harbor No.2 heating oil' },
-  EER_EPJK_PF4_RGC_DPG: { name: 'Jet fuel', icon: '✈', full: 'US Gulf Coast kerosene-type jet fuel' },
+const PET_META: Record<string, { name: string; kind: PriceRow['kind']; full: string }> = {
+  RWTC: { name: 'WTI crude', kind: 'crude', full: 'Cushing OK WTI crude oil spot $/barrel' },
+  RBRTE: { name: 'Brent crude', kind: 'crude', full: 'Europe Brent crude oil spot $/barrel' },
+  EER_EPMRU_PF4_RGC_DPG: { name: 'Gasoline', kind: 'gasoline', full: 'US Gulf Coast conventional gasoline regular' },
+  EER_EPD2DXL0_PF4_RGC_DPG: { name: 'Diesel ULSD', kind: 'diesel', full: 'US Gulf Coast ultra-low sulfur diesel' },
+  EER_EPD2F_PF4_Y35NY_DPG: { name: 'Heating oil', kind: 'heat', full: 'NY Harbor No.2 heating oil' },
+  EER_EPJK_PF4_RGC_DPG: { name: 'Jet fuel', kind: 'jet', full: 'US Gulf Coast kerosene-type jet fuel' },
 };
 
 async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
@@ -378,7 +378,7 @@ async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
     return {
       id: `pet-${series}`,
       name: meta?.name || desc.slice(0, 18),
-      icon: meta?.icon || '💧',
+      kind: meta?.kind || 'other',
       fullName: meta?.full || desc,
       value: Number(r.value).toFixed(units.includes('BBL') ? 2 : 3),
       unit: units.includes('BBL') ? '$/bbl' : units.includes('GAL') ? '$/gal' : units || '$',
@@ -412,19 +412,19 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         const id = String(r.sectorid || '');
         if (id && !latest[id] && r.price != null) latest[id] = r;
       }
-      const labels: Record<string, { name: string; icon: string; full: string }> = {
-        RES: { name: 'Power · Res', icon: '⚡', full: 'Electricity retail residential' },
-        COM: { name: 'Power · Com', icon: '⚡', full: 'Electricity retail commercial' },
-        IND: { name: 'Power · Ind', icon: '⚡', full: 'Electricity retail industrial' },
-        TRA: { name: 'Power · Trans', icon: '⚡', full: 'Electricity retail transportation' },
-        ALL: { name: 'Power · All', icon: '⚡', full: 'Electricity retail all sectors' },
+      const labels: Record<string, { name: string; full: string }> = {
+        RES: { name: 'Power · Res', full: 'Electricity retail residential' },
+        COM: { name: 'Power · Com', full: 'Electricity retail commercial' },
+        IND: { name: 'Power · Ind', full: 'Electricity retail industrial' },
+        TRA: { name: 'Power · Trans', full: 'Electricity retail transportation' },
+        ALL: { name: 'Power · All', full: 'Electricity retail all sectors' },
       };
       for (const [id, r] of Object.entries(latest)) {
-        const meta = labels[id] || { name: String(r.sectorName || id), icon: '⚡', full: String(r.sectorName || id) };
+        const meta = labels[id] || { name: String(r.sectorName || id), full: String(r.sectorName || id) };
         rows.push({
           id: `elec-${id}`,
           name: meta.name,
-          icon: meta.icon,
+          kind: 'power',
           fullName: meta.full,
           value: Number(r.price).toFixed(2),
           unit: '¢/kWh',
@@ -452,7 +452,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         rows.push({
           id: 'ng-hh',
           name: 'Gas · HH',
-          icon: '🔥',
+          kind: 'gas',
           fullName: 'Henry Hub natural gas spot',
           value: Number(r.value).toFixed(2),
           unit: '$/MMBtu',
@@ -504,7 +504,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         rows.push({
           id: `imp-crude-${key}`.slice(0, 40),
           name: `Imp. crude`,
-          icon: '🛢',
+          kind: 'crude',
           fullName: `Imported crude FOB · ${area || 'selected'}`,
           value: Number(r.value).toFixed(2),
           unit: String(r.units || '$/bbl').includes('BBL') ? '$/bbl' : String(r.units || '$/bbl'),
@@ -549,7 +549,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         rows.push({
           id: `ng-${proc}`.slice(0, 40),
           name: short,
-          icon: '🔥',
+          kind: 'gas',
           fullName: `Natural gas · ${proc}`,
           value: Number(r.value).toFixed(2),
           unit: String(r.units || '$/Mcf'),
@@ -646,6 +646,72 @@ const plantCirclePaint = {
   'circle-stroke-width': 0.6,
   'circle-stroke-color': '#0a0e14',
 } as const;
+
+
+function PriceIcon({ kind }: { kind?: PriceRow['kind'] }) {
+  const k = kind || 'other';
+  const stroke = 'currentColor';
+  const common = { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke, strokeWidth: 1.75, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  switch (k) {
+    case 'power':
+      return (
+        <svg {...common} className="price-svg price-svg-power">
+          <path d="M13 2 4 14h7l-1 8 10-12h-7l1-8z" />
+        </svg>
+      );
+    case 'gas':
+      return (
+        <svg {...common} className="price-svg price-svg-gas">
+          <path d="M12 3c0 4-4 6-4 10a4 4 0 0 0 8 0c0-4-4-6-4-10z" />
+          <path d="M9 21h6" />
+        </svg>
+      );
+    case 'crude':
+      return (
+        <svg {...common} className="price-svg price-svg-crude">
+          <path d="M8 4h8v4l2 3v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-9l2-3V4z" />
+          <path d="M8 8h8" />
+        </svg>
+      );
+    case 'gasoline':
+      return (
+        <svg {...common} className="price-svg price-svg-gaso">
+          <path d="M4 20V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v12" />
+          <path d="M8 6V4h4v2" />
+          <path d="M14 10h2.5a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2" />
+        </svg>
+      );
+    case 'diesel':
+      return (
+        <svg {...common} className="price-svg price-svg-diesel">
+          <rect x="3" y="10" width="12" height="8" rx="1.5" />
+          <path d="M15 13h3l2 2v3h-5" />
+          <circle cx="7" cy="18" r="1.5" />
+          <circle cx="13" cy="18" r="1.5" />
+        </svg>
+      );
+    case 'heat':
+      return (
+        <svg {...common} className="price-svg price-svg-heat">
+          <path d="M4 20h16" />
+          <path d="M6 20V10l6-6 6 6v10" />
+          <path d="M10 20v-5h4v5" />
+        </svg>
+      );
+    case 'jet':
+      return (
+        <svg {...common} className="price-svg price-svg-jet">
+          <path d="M2 16 12 4l10 12-4 1-2 4-2-4-4-1z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common} className="price-svg">
+          <circle cx="12" cy="12" r="7" />
+        </svg>
+      );
+  }
+}
 
 export default function App() {
   const mapRef = useRef<MapRef>(null);
@@ -1694,7 +1760,9 @@ export default function App() {
             {energyPrices.map((r) => (
               <div className="price-row" key={r.id} title={`${r.fullName || r.name} · ${r.period}`}>
                 <span className="price-name">
-                  <span className="price-icon" aria-hidden>{r.icon || '•'}</span>
+                  <span className="price-icon" aria-hidden>
+                    <PriceIcon kind={r.kind} />
+                  </span>
                   {r.name}
                 </span>
                 <span className="price-val">{r.value}<span className="price-unit">{r.unit}</span></span>
