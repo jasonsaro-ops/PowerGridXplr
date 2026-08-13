@@ -1638,7 +1638,7 @@ export default function App() {
         <button
           type="button"
           className="rail-toggle"
-          style={{ right: rightOpen ? 258 : 8 }}
+          style={{ right: rightOpen ? 208 : 8 }}
           onClick={() => setRightOpen((v) => !v)}
         >
           {rightOpen ? 'Hide prices ›' : '‹ Prices & risk'}

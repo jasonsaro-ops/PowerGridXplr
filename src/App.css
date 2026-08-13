@@ -143,7 +143,7 @@
 }
 
 .sidebar {
-  width: 270px;
+  width: 248px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
   display: flex;
@@ -606,4 +606,87 @@ a {
   color: var(--text-muted, #94a3b8);
   line-height: 1.35;
   margin-top: 6px;
+}
+
+/* Right prices/risk rail — keep narrow so map dominates */
+.sidebar-right {
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-panel, #0f1419);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  transition: width 0.2s ease, min-width 0.2s ease, max-width 0.2s ease, opacity 0.2s ease;
+}
+
+.sidebar-right.collapsed {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  opacity: 0;
+  overflow: hidden;
+  border-left: none;
+  padding: 0;
+}
+
+.sidebar-right .sidebar-section {
+  padding: 8px 10px;
+}
+
+.sidebar-right .sidebar-section h3 {
+  font-size: 0.65rem;
+  margin-bottom: 4px;
+}
+
+.sidebar-right .price-row {
+  padding: 2px 0 !important;
+  font-size: 0.68rem !important;
+  gap: 4px;
+}
+
+.sidebar-right .price-name {
+  font-size: 0.65rem;
+  max-width: 110px;
+}
+
+.sidebar-right .price-val {
+  font-size: 0.65rem;
+}
+
+.sidebar-right .disclaimer-tiny {
+  font-size: 0.6rem;
+  margin-top: 4px;
+}
+
+.sidebar-right .stress-level {
+  font-size: 0.75rem;
+}
+
+.rail-toggle {
+  position: absolute;
+  top: 56px;
+  z-index: 15;
+  background: rgba(15, 20, 28, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 0.68rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.rail-toggle:hover {
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+.map-container {
+  flex: 1 1 auto !important;
+  min-width: 0;
 }
