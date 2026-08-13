@@ -93,6 +93,23 @@ interface PriceRow {
   period: string;
   kind?: 'power' | 'gas' | 'crude' | 'gasoline' | 'diesel' | 'heat' | 'jet' | 'other';
   fullName?: string;
+  seriesKey?: string; // e.g. pet:RWTC | elec:RES | ng:HH
+}
+
+interface DetailMeta {
+  label: string;
+  value: string;
+}
+
+interface DetailState {
+  title: string;
+  subtitle?: string;
+  iconKind?: PriceRow['kind'];
+  meta: DetailMeta[];
+  history?: { period: string; value: number }[];
+  historyLabel?: string;
+  source?: string;
+  notes?: string;
 }
 
 interface LineProps {
@@ -380,6 +397,7 @@ async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
       name: meta?.name || desc.slice(0, 18),
       kind: meta?.kind || 'other',
       fullName: meta?.full || desc,
+      seriesKey: `pet:${series}`,
       value: Number(r.value).toFixed(units.includes('BBL') ? 2 : 3),
       unit: units.includes('BBL') ? '$/bbl' : units.includes('GAL') ? '$/gal' : units || '$',
       period: String(r.period || ''),
@@ -426,6 +444,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
           name: meta.name,
           kind: 'power',
           fullName: meta.full,
+          seriesKey: `elec:${id}`,
           value: Number(r.price).toFixed(2),
           unit: '¢/kWh',
           period: String(r.period || ''),
@@ -454,6 +473,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
           name: 'Gas · HH',
           kind: 'gas',
           fullName: 'Henry Hub natural gas spot',
+          seriesKey: 'ng:HH',
           value: Number(r.value).toFixed(2),
           unit: '$/MMBtu',
           period: String(r.period || ''),
@@ -560,6 +580,83 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
   } catch { /* ignore */ }
 
   return rows;
+}
+
+
+async function fetchPriceHistory(seriesKey: string): Promise<{ period: string; value: number }[]> {
+  if (!EIA_KEY || !seriesKey) return [];
+  try {
+    const [kind, code] = seriesKey.split(':');
+    if (kind === 'pet') {
+      const url = new URL('https://api.eia.gov/v2/petroleum/pri/spt/data/');
+      url.searchParams.set('api_key', EIA_KEY);
+      url.searchParams.set('frequency', 'daily');
+      url.searchParams.set('data[0]', 'value');
+      url.searchParams.append('facets[series][]', code);
+      url.searchParams.set('sort[0][column]', 'period');
+      url.searchParams.set('sort[0][direction]', 'desc');
+      url.searchParams.set('length', '120'); // ~4 months daily
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      const json = await res.json();
+      return ((json.response?.data || []) as Array<Record<string, unknown>>)
+        .filter((r) => r.value != null)
+        .map((r) => ({ period: String(r.period), value: Number(r.value) }));
+    }
+    if (kind === 'elec') {
+      const url = new URL('https://api.eia.gov/v2/electricity/retail-sales/data/');
+      url.searchParams.set('api_key', EIA_KEY);
+      url.searchParams.set('frequency', 'monthly');
+      url.searchParams.set('data[0]', 'price');
+      url.searchParams.append('facets[stateid][]', 'US');
+      url.searchParams.append('facets[sectorid][]', code);
+      url.searchParams.set('sort[0][column]', 'period');
+      url.searchParams.set('sort[0][direction]', 'desc');
+      url.searchParams.set('length', '36'); // 3 years monthly
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      const json = await res.json();
+      return ((json.response?.data || []) as Array<Record<string, unknown>>)
+        .filter((r) => r.price != null)
+        .map((r) => ({ period: String(r.period), value: Number(r.price) }));
+    }
+    if (kind === 'ng' && code === 'HH') {
+      const url = new URL('https://api.eia.gov/v2/natural-gas/pri/fut/data/');
+      url.searchParams.set('api_key', EIA_KEY);
+      url.searchParams.set('frequency', 'daily');
+      url.searchParams.set('data[0]', 'value');
+      url.searchParams.append('facets[series][]', 'RNGWHHD');
+      url.searchParams.set('sort[0][column]', 'period');
+      url.searchParams.set('sort[0][direction]', 'desc');
+      url.searchParams.set('length', '120');
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      const json = await res.json();
+      return ((json.response?.data || []) as Array<Record<string, unknown>>)
+        .filter((r) => r.value != null)
+        .map((r) => ({ period: String(r.period), value: Number(r.value) }));
+    }
+    if (kind === 'ba') {
+      const url = new URL('https://api.eia.gov/v2/electricity/rto/region-data/data/');
+      url.searchParams.set('api_key', EIA_KEY);
+      url.searchParams.set('frequency', 'hourly');
+      url.searchParams.set('data[0]', 'value');
+      url.searchParams.append('facets[type][]', 'D');
+      url.searchParams.append('facets[respondent][]', code);
+      url.searchParams.set('sort[0][column]', 'period');
+      url.searchParams.set('sort[0][direction]', 'desc');
+      url.searchParams.set('length', '48');
+      const res = await fetch(url.toString());
+      if (!res.ok) return [];
+      const json = await res.json();
+      return ((json.response?.data || []) as Array<Record<string, unknown>>)
+        .filter((r) => r.value != null)
+        .map((r) => ({ period: String(r.period), value: Number(r.value) }));
+    }
+  } catch {
+    return [];
+  }
+  return [];
 }
 
 async function fetchBaDemand(): Promise<BaDemand[]> {
@@ -758,12 +855,8 @@ export default function App() {
   const [energyPrices, setEnergyPrices] = useState<PriceRow[]>([]);
   const [pricesUpdated, setPricesUpdated] = useState<Date | null>(null);
   const [rightOpen, setRightOpen] = useState(true);
-  const [pmuStatus] = useState<{ mode: string; detail: string }>({
-    mode: 'unavailable',
-    detail: import.meta.env.VITE_PMU_ENDPOINT
-      ? 'Custom endpoint configured — connect PDC/stream in deployment'
-      : 'No public live US PMU stream. Historical research sets (PNNL/GESL) only.',
-  });
+  const [detail, setDetail] = useState<DetailState | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const loadLive = useCallback(async () => {
     setLoading(true);
@@ -828,6 +921,43 @@ export default function App() {
     const id = setInterval(loadPrices, 5 * 60 * 1000);
     return () => clearInterval(id);
   }, [loadPrices]);
+
+  const openDetail = useCallback(async (d: DetailState, seriesKey?: string) => {
+    setDetail(d);
+    if (!seriesKey) return;
+    setDetailLoading(true);
+    try {
+      const history = await fetchPriceHistory(seriesKey);
+      setDetail((prev) => (prev ? { ...prev, history, historyLabel: prev.historyLabel || 'Recent history (EIA)' } : prev));
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const openPriceDetail = useCallback(async (r: PriceRow) => {
+    await openDetail(
+      {
+        title: r.name,
+        subtitle: r.fullName || r.name,
+        iconKind: r.kind,
+        meta: [
+          { label: 'Latest value', value: `${r.value} ${r.unit}` },
+          { label: 'Period', value: r.period || '—' },
+          { label: 'Unit', value: r.unit },
+          { label: 'Series id', value: r.seriesKey || r.id },
+          { label: 'Category', value: r.kind || 'other' },
+          { label: 'Source', value: 'U.S. Energy Information Administration (EIA)' },
+        ],
+        historyLabel: r.seriesKey?.startsWith('elec:')
+          ? 'Monthly history (up to 3 years)'
+          : 'Daily history (recent months)',
+        source: 'EIA Open Data API v2',
+        notes: 'Public survey/market series. Not ISO real-time LMP. Lag varies by product.',
+      },
+      r.seriesKey
+    );
+  }, [openDetail]);
+
 
   useEffect(() => {
     PLANT_REGIONS.forEach((r) => {
@@ -1312,10 +1442,35 @@ export default function App() {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading BA demand…</div>
               )}
               {baDemand.map((b) => (
-                <div className="odin-row" key={b.code}>
+                <button
+                  type="button"
+                  className="odin-row meta-row-btn"
+                  key={b.code}
+                  title="Click for BA demand details"
+                  onClick={() =>
+                    openDetail(
+                      {
+                        title: b.code,
+                        subtitle: b.name,
+                        iconKind: 'power',
+                        meta: [
+                          { label: 'Demand', value: formatMWh(b.value) },
+                          { label: 'Period', value: b.period },
+                          { label: 'BA code', value: b.code },
+                          { label: 'Type', value: 'Hourly demand (EIA-930)' },
+                          { label: 'Source', value: 'EIA Open Data · RTO region-data' },
+                        ],
+                        historyLabel: 'Hourly demand (last ~48 hours)',
+                        source: 'EIA API v2',
+                        notes: 'Balancing authority demand. Approximate US48 coverage by BA footprint.',
+                      },
+                      `ba:${b.code}`
+                    )
+                  }
+                >
                   <span className="odin-name" title={b.name}>{b.code} · {b.name.replace(/, LLC|, Inc\.?.*$/i, '')}</span>
                   <span className="odin-count" style={{ color: '#38bdf8' }}>{formatMWh(b.value)}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1331,18 +1486,35 @@ export default function App() {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>None in last 24h (or loading…)</div>
               )}
               {quakes.slice(0, 8).map((q) => (
-                <div
-                  className="hazard-item"
+                <button
+                  type="button"
+                  className="hazard-item meta-row-btn"
                   key={q.id}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => mapRef.current?.flyTo({ center: [q.lon, q.lat], zoom: 6, duration: 1200 })}
+                  onClick={() => {
+                    mapRef.current?.flyTo({ center: [q.lon, q.lat], zoom: 6, duration: 1200 });
+                    openDetail({
+                      title: `M${q.mag.toFixed(1)} earthquake`,
+                      subtitle: q.place,
+                      meta: [
+                        { label: 'Magnitude', value: q.mag.toFixed(1) },
+                        { label: 'Depth', value: `${q.depth.toFixed(1)} km` },
+                        { label: 'Time', value: q.time ? new Date(q.time).toLocaleString() : '—' },
+                        { label: 'Latitude', value: q.lat.toFixed(4) },
+                        { label: 'Longitude', value: q.lon.toFixed(4) },
+                        { label: 'Event id', value: q.id },
+                        { label: 'Source', value: 'USGS earthquake feed (M4.5+ 24h)' },
+                      ],
+                      source: 'https://earthquake.usgs.gov',
+                      notes: 'Shown for situational awareness near infrastructure. Not a grid sensor.',
+                    });
+                  }}
                 >
                   <span className="hazard-sev" style={{ background: q.mag >= 6 ? '#ef4444' : q.mag >= 5 ? '#f97316' : '#eab308' }} />
                   <div>
                     <div className="hazard-event">M{q.mag.toFixed(1)} · {q.place}</div>
                     <div className="hazard-area">{q.time ? new Date(q.time).toLocaleString() : ''}</div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1358,13 +1530,34 @@ export default function App() {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No grid-relevant alerts (or loading…)</div>
               )}
               {nwsAlerts.slice(0, 12).map((a) => (
-                <div className="hazard-item" key={a.id}>
+                <button
+                  type="button"
+                  className="hazard-item meta-row-btn"
+                  key={a.id}
+                  onClick={() =>
+                    openDetail({
+                      title: a.event,
+                      subtitle: a.headline || a.area,
+                      meta: [
+                        { label: 'Severity', value: a.severity },
+                        { label: 'Urgency', value: a.urgency || '—' },
+                        { label: 'Area', value: a.area || '—' },
+                        { label: 'Onset', value: a.onset ? new Date(a.onset).toLocaleString() : '—' },
+                        { label: 'Ends', value: a.ends ? new Date(a.ends).toLocaleString() : '—' },
+                        { label: 'Alert id', value: a.id },
+                        { label: 'Source', value: 'NOAA / NWS api.weather.gov' },
+                      ],
+                      source: 'National Weather Service',
+                      notes: 'Grid-relevant filter applied. Official forecasts remain with NWS products.',
+                    })
+                  }
+                >
                   <span className="hazard-sev" style={{ background: severityColor(a.severity) }} />
                   <div>
                     <div className="hazard-event">{a.event}</div>
                     <div className="hazard-area">{a.area || a.headline}</div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1380,10 +1573,29 @@ export default function App() {
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>No outages in feed (or loading…)</div>
               )}
               {odinUtils.slice(0, 10).map((u) => (
-                <div className="odin-row" key={u.name + String(u.totalOutages)}>
+                <button
+                  type="button"
+                  className="odin-row meta-row-btn"
+                  key={u.name + String(u.totalOutages)}
+                  onClick={() =>
+                    openDetail({
+                      title: u.name,
+                      subtitle: 'ODIN utility outage snapshot',
+                      meta: [
+                        { label: 'Customers out', value: u.totalOutages.toLocaleString() },
+                        { label: 'Resolution', value: u.dataResolution || '—' },
+                        { label: 'Received', value: u.receivedDate || '—' },
+                        { label: 'EIA utility id', value: u.eiaId || '—' },
+                        { label: 'Source', value: 'ORNL ODIN public status' },
+                      ],
+                      source: 'https://odin.ornl.gov',
+                      notes: 'Not full national coverage. Participating utilities only. Not a substitute for utility OMS maps.',
+                    })
+                  }
+                >
                   <span className="odin-name" title={u.name}>{u.name}</span>
                   <span className="odin-count">{u.totalOutages.toLocaleString()}</span>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -1758,7 +1970,13 @@ export default function App() {
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading prices…</div>
             )}
             {energyPrices.map((r) => (
-              <div className="price-row" key={r.id} title={`${r.fullName || r.name} · ${r.period}`}>
+              <button
+                type="button"
+                className="price-row price-row-btn"
+                key={r.id}
+                title={`${r.fullName || r.name} · ${r.period} — click for details`}
+                onClick={() => openPriceDetail(r)}
+              >
                 <span className="price-name">
                   <span className="price-icon" aria-hidden>
                     <PriceIcon kind={r.kind} />
@@ -1766,24 +1984,12 @@ export default function App() {
                   {r.name}
                 </span>
                 <span className="price-val">{r.value}<span className="price-unit">{r.unit}</span></span>
-              </div>
+              </button>
             ))}
             <p className="disclaimer-tiny">
               Public EIA series only. Not ISO real-time LMP. Fuel-specific wholesale power prices by source are not published as a single live national feed.
             </p>
           </div>
-
-          <div className="sidebar-section">
-            <h3>PMU / synchrophasor</h3>
-            <div className="stress-level" style={{ color: pmuStatus.mode === 'live' ? '#22c55e' : '#94a3b8' }}>
-              {pmuStatus.mode === 'live' ? 'Live endpoint' : 'Not connected'}
-            </div>
-            <p className="disclaimer-tiny">{pmuStatus.detail}</p>
-            <p className="disclaimer-tiny">
-              No free national live PMU API. Optional VITE_PMU_ENDPOINT for licensed PDC feeds.
-            </p>
-          </div>
-
           <div className="sidebar-section">
             <h3>Voltage sag risk (proxy)</h3>
             <div className="stress-level" style={{ color: gridStress.color }}>{gridStress.level} · {gridStress.score}/100</div>
@@ -1812,6 +2018,67 @@ export default function App() {
             </p>
           </div>
         </aside>
+
+
+      {detail && (
+        <div className="detail-backdrop" onClick={() => setDetail(null)} role="presentation">
+          <div
+            className="detail-panel"
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="detail-header">
+              <div className="detail-title-row">
+                {detail.iconKind && (
+                  <span className="price-icon detail-icon">
+                    <PriceIcon kind={detail.iconKind} />
+                  </span>
+                )}
+                <div>
+                  <div className="detail-title">{detail.title}</div>
+                  {detail.subtitle && <div className="detail-sub">{detail.subtitle}</div>}
+                </div>
+              </div>
+              <button type="button" className="btn btn-ghost" onClick={() => setDetail(null)}>
+                Close
+              </button>
+            </div>
+            <div className="detail-body">
+              <h4>Metadata</h4>
+              {detail.meta.map((m) => (
+                <div className="detail-meta-row" key={m.label}>
+                  <span>{m.label}</span>
+                  <strong>{m.value}</strong>
+                </div>
+              ))}
+              {detail.source && (
+                <div className="detail-meta-row">
+                  <span>Feed</span>
+                  <strong>{detail.source}</strong>
+                </div>
+              )}
+              {detail.notes && <p className="disclaimer-tiny">{detail.notes}</p>}
+              <h4>
+                History {detailLoading ? '· loading…' : detail.historyLabel ? `· ${detail.historyLabel}` : ''}
+              </h4>
+              {!detailLoading && (!detail.history || detail.history.length === 0) && (
+                <p className="disclaimer-tiny">No time series loaded for this item (or not applicable).</p>
+              )}
+              {detail.history && detail.history.length > 0 && (
+                <div className="detail-history">
+                  {detail.history.slice(0, 60).map((h) => (
+                    <div className="detail-hist-row" key={h.period + String(h.value)}>
+                      <span>{h.period}</span>
+                      <strong>{h.value.toLocaleString(undefined, { maximumFractionDigits: 3 })}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       </div>
     </div>
