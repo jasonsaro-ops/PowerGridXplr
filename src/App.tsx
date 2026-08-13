@@ -1069,34 +1069,6 @@ export default function App() {
     return { score, level, color, reasons, varNeed };
   }, [nwsAlerts, odinUtils, latestDemand, totalGen, quakes]);
 
-  const reliabilityMetrics = useMemo(() => {
-    const outCustomers = odinUtils.reduce((s, u) => s + u.totalOutages, 0);
-    const utilReporting = odinUtils.length;
-    const severeWx = nwsAlerts.filter((a) => a.severity === 'Extreme' || a.severity === 'Severe').length;
-    const gen = totalGen || 0;
-    const dem = latestDemand ? Number(latestDemand.value) : 0;
-    const reserveProxy = gen > 0 && dem > 0 ? ((gen - dem) / gen) * 100 : null;
-    const baCount = baDemand.length;
-    const plantN = plantCount;
-    // Composite reliability index 0-100 (higher = more stressed) from public proxies only
-    let stress = gridStress.score;
-    const availabilityProxy = outCustomers > 0
-      ? Math.max(0, 100 - Math.min(40, outCustomers / 5000))
-      : 98;
-    return {
-      outCustomers,
-      utilReporting,
-      severeWx,
-      reserveProxy,
-      baCount,
-      plantN,
-      stress,
-      availabilityProxy,
-      statusLabel: stress >= 70 ? 'Stressed' : stress >= 35 ? 'Watch' : 'Stable',
-      statusColor: stress >= 70 ? '#ef4444' : stress >= 35 ? '#f59e0b' : '#22c55e',
-    };
-  }, [odinUtils, nwsAlerts, totalGen, latestDemand, baDemand.length, plantCount, gridStress.score]);
-
   const lineFilterExpr = useMemo(() => {
     const enabledClasses: string[] = [];
     for (const opt of VOLT_FILTER_OPTIONS) {
@@ -1134,6 +1106,35 @@ export default function App() {
     }
     return n;
   }, [regionOn, plantData]);
+
+  const reliabilityMetrics = useMemo(() => {
+    const outCustomers = odinUtils.reduce((s, u) => s + u.totalOutages, 0);
+    const utilReporting = odinUtils.length;
+    const severeWx = nwsAlerts.filter((a) => a.severity === 'Extreme' || a.severity === 'Severe').length;
+    const gen = totalGen || 0;
+    const dem = latestDemand ? Number(latestDemand.value) : 0;
+    const reserveProxy = gen > 0 && dem > 0 ? ((gen - dem) / gen) * 100 : null;
+    const baCount = baDemand.length;
+    const plantN = plantCount;
+    // Composite reliability index 0-100 (higher = more stressed) from public proxies only
+    let stress = gridStress.score;
+    const availabilityProxy = outCustomers > 0
+      ? Math.max(0, 100 - Math.min(40, outCustomers / 5000))
+      : 98;
+    return {
+      outCustomers,
+      utilReporting,
+      severeWx,
+      reserveProxy,
+      baCount,
+      plantN,
+      stress,
+      availabilityProxy,
+      statusLabel: stress >= 70 ? 'Stressed' : stress >= 35 ? 'Watch' : 'Stable',
+      statusColor: stress >= 70 ? '#ef4444' : stress >= 35 ? '#f59e0b' : '#22c55e',
+    };
+  }, [odinUtils, nwsAlerts, totalGen, latestDemand, baDemand.length, plantCount, gridStress.score]);
+
 
   const handleSearch = async () => {
     const q = search.trim();
