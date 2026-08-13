@@ -91,6 +91,8 @@ interface PriceRow {
   value: string;
   unit: string;
   period: string;
+  icon?: string;
+  fullName?: string;
 }
 
 interface LineProps {
@@ -345,6 +347,15 @@ const MAJOR_BAS = ['PJM', 'MISO', 'ERCO', 'CISO', 'NYIS', 'ISNE', 'SWPP', 'SOCO'
 
 
 
+const PET_META: Record<string, { name: string; icon: string; full: string }> = {
+  RWTC: { name: 'WTI crude', icon: '🛢', full: 'Cushing OK WTI crude oil spot $/barrel' },
+  RBRTE: { name: 'Brent crude', icon: '🛢', full: 'Europe Brent crude oil spot $/barrel' },
+  EER_EPMRU_PF4_RGC_DPG: { name: 'Gasoline', icon: '⛽', full: 'US Gulf Coast conventional gasoline regular' },
+  EER_EPD2DXL0_PF4_RGC_DPG: { name: 'Diesel ULSD', icon: '🚛', full: 'US Gulf Coast ultra-low sulfur diesel' },
+  EER_EPD2F_PF4_Y35NY_DPG: { name: 'Heating oil', icon: '🏠', full: 'NY Harbor No.2 heating oil' },
+  EER_EPJK_PF4_RGC_DPG: { name: 'Jet fuel', icon: '✈', full: 'US Gulf Coast kerosene-type jet fuel' },
+};
+
 async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
   if (!EIA_KEY) return null;
   try {
@@ -361,11 +372,14 @@ async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
     const json = await res.json();
     const r = (json.response?.data || [])[0];
     if (!r || r.value == null) return null;
-    const desc = String(r['series-description'] || r['product-name'] || series);
     const units = String(r.units || '');
+    const meta = PET_META[series];
+    const desc = String(r['series-description'] || r['product-name'] || series);
     return {
       id: `pet-${series}`,
-      name: desc.replace(' (Dollars per Barrel)', '').replace(' (Dollars per Gallon)', '').replace(' Spot Price FOB', '').replace(' Spot Price', ''),
+      name: meta?.name || desc.slice(0, 18),
+      icon: meta?.icon || '💧',
+      fullName: meta?.full || desc,
       value: Number(r.value).toFixed(units.includes('BBL') ? 2 : 3),
       unit: units.includes('BBL') ? '$/bbl' : units.includes('GAL') ? '$/gal' : units || '$',
       period: String(r.period || ''),
@@ -398,17 +412,20 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         const id = String(r.sectorid || '');
         if (id && !latest[id] && r.price != null) latest[id] = r;
       }
-      const labels: Record<string, string> = {
-        RES: 'Electricity retail · Residential',
-        COM: 'Electricity retail · Commercial',
-        IND: 'Electricity retail · Industrial',
-        TRA: 'Electricity retail · Transportation',
-        ALL: 'Electricity retail · All sectors',
+      const labels: Record<string, { name: string; icon: string; full: string }> = {
+        RES: { name: 'Power · Res', icon: '⚡', full: 'Electricity retail residential' },
+        COM: { name: 'Power · Com', icon: '⚡', full: 'Electricity retail commercial' },
+        IND: { name: 'Power · Ind', icon: '⚡', full: 'Electricity retail industrial' },
+        TRA: { name: 'Power · Trans', icon: '⚡', full: 'Electricity retail transportation' },
+        ALL: { name: 'Power · All', icon: '⚡', full: 'Electricity retail all sectors' },
       };
       for (const [id, r] of Object.entries(latest)) {
+        const meta = labels[id] || { name: String(r.sectorName || id), icon: '⚡', full: String(r.sectorName || id) };
         rows.push({
           id: `elec-${id}`,
-          name: labels[id] || String(r.sectorName || id),
+          name: meta.name,
+          icon: meta.icon,
+          fullName: meta.full,
           value: Number(r.price).toFixed(2),
           unit: '¢/kWh',
           period: String(r.period || ''),
@@ -434,7 +451,9 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
       if (r?.value != null) {
         rows.push({
           id: 'ng-hh',
-          name: 'Natural gas · Henry Hub spot',
+          name: 'Gas · HH',
+          icon: '🔥',
+          fullName: 'Henry Hub natural gas spot',
           value: Number(r.value).toFixed(2),
           unit: '$/MMBtu',
           period: String(r.period || ''),
@@ -484,7 +503,9 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         seen.add(key);
         rows.push({
           id: `imp-crude-${key}`.slice(0, 40),
-          name: `Imported crude FOB · ${area || 'selected'}`,
+          name: `Imp. crude`,
+          icon: '🛢',
+          fullName: `Imported crude FOB · ${area || 'selected'}`,
           value: Number(r.value).toFixed(2),
           unit: String(r.units || '$/bbl').includes('BBL') ? '$/bbl' : String(r.units || '$/bbl'),
           period: String(r.period || ''),
@@ -519,9 +540,17 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         if (!latest[proc]) latest[proc] = r;
       }
       for (const [proc, r] of Object.entries(latest)) {
+        const short =
+          /residential/i.test(proc) ? 'Gas · Res' :
+          /industrial/i.test(proc) ? 'Gas · Ind' :
+          /electric/i.test(proc) ? 'Gas · Power' :
+          /citygate/i.test(proc) ? 'Gas · City' :
+          `Gas · ${proc.replace(/ Price$/i, '').slice(0, 10)}`;
         rows.push({
           id: `ng-${proc}`.slice(0, 40),
-          name: `Natural gas · ${proc.replace(/ Price$/i, '')}`,
+          name: short,
+          icon: '🔥',
+          fullName: `Natural gas · ${proc}`,
           value: Number(r.value).toFixed(2),
           unit: String(r.units || '$/Mcf'),
           period: String(r.period || ''),
@@ -1663,9 +1692,12 @@ export default function App() {
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading prices…</div>
             )}
             {energyPrices.map((r) => (
-              <div className="price-row" key={r.id}>
-                <span className="price-name" title={r.period}>{r.name}</span>
-                <span className="price-val">{r.value} {r.unit}</span>
+              <div className="price-row" key={r.id} title={`${r.fullName || r.name} · ${r.period}`}>
+                <span className="price-name">
+                  <span className="price-icon" aria-hidden>{r.icon || '•'}</span>
+                  {r.name}
+                </span>
+                <span className="price-val">{r.value}<span className="price-unit">{r.unit}</span></span>
               </div>
             ))}
             <p className="disclaimer-tiny">

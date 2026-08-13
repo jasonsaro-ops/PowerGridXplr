@@ -690,3 +690,27 @@ a {
   flex: 1 1 auto !important;
   min-width: 0;
 }
+
+.price-icon {
+  display: inline-block;
+  width: 1.1em;
+  margin-right: 4px;
+  text-align: center;
+  opacity: 0.9;
+}
+
+.sidebar-right .price-row {
+  align-items: center;
+}
+
+.sidebar-right .price-unit {
+  margin-left: 3px;
+  font-weight: 500;
+  opacity: 0.75;
+  font-size: 0.6rem;
+}
+
+.sidebar-right .price-val {
+  color: #86efac;
+  letter-spacing: -0.01em;
+}
