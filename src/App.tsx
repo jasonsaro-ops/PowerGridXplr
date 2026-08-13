@@ -51,10 +51,25 @@ interface FeatureCollection {
   }>;
 }
 
+interface SubstationProps {
+  NAME?: string;
+  STATE?: string;
+  TYPE?: string;
+  STATUS?: string;
+  MAX_VOLT?: number;
+  MIN_VOLT?: number;
+  CITY?: string;
+  COUNTY?: string;
+  ZIP?: string;
+  LINES?: number;
+}
+
 interface PopupState {
   lon: number;
   lat: number;
-  props: PlantProps;
+  kind: 'plant' | 'substation';
+  plant?: PlantProps;
+  substation?: SubstationProps;
 }
 
 interface NwsAlert {
@@ -386,7 +401,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: true });
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<UtilityResult[]>([]);
   const [fuelData, setFuelData] = useState<FuelPoint[]>([]);
@@ -398,6 +413,7 @@ export default function App() {
   const [plantData, setPlantData] = useState<Record<string, FeatureCollection | null>>({});
   const [linesGeojson, setLinesGeojson] = useState<FeatureCollection | null>(null);
   const [interconnectGeojson, setInterconnectGeojson] = useState<FeatureCollection | null>(null);
+  const [substationsGeojson, setSubstationsGeojson] = useState<FeatureCollection | null>(null);
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
@@ -474,6 +490,10 @@ export default function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((gj) => gj && setInterconnectGeojson(gj))
       .catch((e) => console.warn('Interconnect load failed', e));
+    fetch(`${BASE}data/substations_northeast.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setSubstationsGeojson(gj))
+      .catch((e) => console.warn('Substations load failed', e));
   }, []);
 
   useEffect(() => {
@@ -544,21 +564,31 @@ export default function App() {
   };
 
   const onMouseMove = useCallback((e: MapLayerMouseEvent) => {
-    const layersHit = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
+    const layersHit = [...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), 'subs-circle'];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
   }, []);
 
   const onMapClick = useCallback((e: MapLayerMouseEvent) => {
-    const layersHit = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
-    const feat = e.features?.find((f) => layersHit.includes(f.layer?.id || ''));
+    const plantLayers = PLANT_REGIONS.map((r) => `plants-circle-${r.id}`);
+    const feat = e.features?.find((f) => plantLayers.includes(f.layer?.id || '') || f.layer?.id === 'subs-circle');
     if (feat && feat.geometry.type === 'Point') {
       const coords = feat.geometry.coordinates as [number, number];
-      setPlantPopup({
-        lon: coords[0],
-        lat: coords[1],
-        props: (feat.properties || {}) as PlantProps,
-      });
+      if (feat.layer?.id === 'subs-circle') {
+        setPlantPopup({
+          lon: coords[0],
+          lat: coords[1],
+          kind: 'substation',
+          substation: (feat.properties || {}) as SubstationProps,
+        });
+      } else {
+        setPlantPopup({
+          lon: coords[0],
+          lat: coords[1],
+          kind: 'plant',
+          plant: (feat.properties || {}) as PlantProps,
+        });
+      }
     } else {
       setPlantPopup(null);
     }
@@ -676,6 +706,18 @@ export default function App() {
                 />
                 <span className="layer-swatch" style={{ background: '#3b82f6' }} />
                 Interconnection outlines (approx.)
+              </label>
+              <label className="layer-item">
+                <input
+                  type="checkbox"
+                  checked={layers.substations}
+                  onChange={() => setLayers((p) => ({ ...p, substations: !p.substations }))}
+                />
+                <span className="layer-swatch" style={{ background: '#22d3ee' }} />
+                Substations — Northeast
+                <span style={{ marginLeft: 'auto', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {substationsGeojson ? substationsGeojson.features.length : '…'}
+                </span>
               </label>
             </div>
             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
@@ -818,7 +860,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={PLANT_REGIONS.map((r) => `plants-circle-${r.id}`)}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), 'subs-circle']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -882,6 +924,35 @@ export default function App() {
               ) : null
             )}
 
+
+            {layers.substations && substationsGeojson && (
+              <Source id="subs-ne" type="geojson" data={substationsGeojson}>
+                <Layer
+                  id="subs-circle"
+                  type="circle"
+                  minzoom={6}
+                  paint={{
+                    'circle-radius': [
+                      'interpolate', ['linear'], ['zoom'],
+                      6, 2,
+                      10, 4,
+                      13, 7,
+                    ],
+                    'circle-color': [
+                      'match', ['coalesce', ['get', 'TYPE'], ''],
+                      'SUBSTATION', '#22d3ee',
+                      'TAP', '#67e8f9',
+                      'RISER', '#a5f3fc',
+                      '#22d3ee',
+                    ],
+                    'circle-opacity': 0.8,
+                    'circle-stroke-width': 0.4,
+                    'circle-stroke-color': '#0a0e14',
+                  }}
+                />
+              </Source>
+            )}
+
             {showQuakes && quakes.length > 0 && (
               <Source id="quakes-src" type="geojson" data={quakesGeo}>
                 <Layer
@@ -917,45 +988,79 @@ export default function App() {
                 closeOnClick={false}
                 maxWidth="320px"
               >
-                <div className="plant-popup">
-                  <div className="plant-popup-title">{plantPopup.props.Plant_Name || 'Power plant'}</div>
-                  <div className="plant-popup-row">
-                    <span>Fuel</span>
-                    <strong style={{ textTransform: 'capitalize' }}>{plantPopup.props.PrimSource || '—'}</strong>
-                  </div>
-                  <div className="plant-popup-row">
-                    <span>Capacity</span>
-                    <strong>
-                      {plantPopup.props.Total_MW != null
-                        ? `${Number(plantPopup.props.Total_MW).toLocaleString()} MW`
-                        : '—'}
-                    </strong>
-                  </div>
-                  {plantPopup.props.Install_MW != null && (
+                {plantPopup.kind === 'substation' && plantPopup.substation ? (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">{plantPopup.substation.NAME || 'Substation'}</div>
                     <div className="plant-popup-row">
-                      <span>Installed</span>
-                      <strong>{Number(plantPopup.props.Install_MW).toLocaleString()} MW</strong>
+                      <span>Type</span>
+                      <strong>{plantPopup.substation.TYPE || '—'}</strong>
                     </div>
-                  )}
-                  <div className="plant-popup-row">
-                    <span>Location</span>
-                    <strong>
-                      {[plantPopup.props.City, plantPopup.props.County, plantPopup.props.State]
-                        .filter(Boolean)
-                        .join(', ') || '—'}
-                    </strong>
+                    <div className="plant-popup-row">
+                      <span>Status</span>
+                      <strong>{plantPopup.substation.STATUS || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Max voltage</span>
+                      <strong>
+                        {plantPopup.substation.MAX_VOLT != null
+                          ? `${Number(plantPopup.substation.MAX_VOLT)} kV`
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Lines</span>
+                      <strong>{plantPopup.substation.LINES ?? '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Location</span>
+                      <strong>
+                        {[plantPopup.substation.CITY, plantPopup.substation.COUNTY, plantPopup.substation.STATE]
+                          .filter(Boolean)
+                          .join(', ') || '—'}
+                      </strong>
+                    </div>
+                    {plantPopup.substation.ZIP && (
+                      <div className="plant-popup-row">
+                        <span>ZIP</span>
+                        <strong>{plantPopup.substation.ZIP}</strong>
+                      </div>
+                    )}
                   </div>
-                  <div className="plant-popup-row">
-                    <span>Utility</span>
-                    <strong>{plantPopup.props.Utility_Na || '—'}</strong>
+                ) : (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">{plantPopup.plant?.Plant_Name || 'Power plant'}</div>
+                    <div className="plant-popup-row">
+                      <span>Fuel</span>
+                      <strong style={{ textTransform: 'capitalize' }}>{plantPopup.plant?.PrimSource || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Capacity</span>
+                      <strong>
+                        {plantPopup.plant?.Total_MW != null
+                          ? `${Number(plantPopup.plant.Total_MW).toLocaleString()} MW`
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Location</span>
+                      <strong>
+                        {[plantPopup.plant?.City, plantPopup.plant?.County, plantPopup.plant?.State]
+                          .filter(Boolean)
+                          .join(', ') || '—'}
+                      </strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Utility</span>
+                      <strong>{plantPopup.plant?.Utility_Na || '—'}</strong>
+                    </div>
                   </div>
-                </div>
+                )}
               </Popup>
             )}
           </Map>
 
           <div className="map-overlay-info">
-            <strong>Click a plant</strong> for name, fuel, MW, utility, and location.
+            <strong>Click a plant or NE substation</strong> for details.
             <br />
             Live outages not included (see About). EIA demand/fuel mix ~1 hr lag.
           </div>
