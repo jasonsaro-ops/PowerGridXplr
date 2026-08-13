@@ -39,6 +39,14 @@ const SUB_REGIONS = [
   { id: 'hawaii', label: 'Hawaii substations', file: 'substations_hawaii.geojson' },
 ] as const;
 
+const VOLT_FILTER_OPTIONS = [
+  { id: '220-287', label: '220–287 kV', classes: ['220-287'] },
+  { id: '345', label: '345 kV', classes: ['345'] },
+  { id: '500', label: '500 kV', classes: ['500'] },
+  { id: '735', label: '735+ kV', classes: ['735 AND ABOVE'] },
+  { id: 'DC', label: 'DC', classes: ['DC'] },
+] as const;
+
 interface FuelPoint { fueltype: string; value: number; period: string; }
 interface RegionPoint { respondent: string; type: string; value: number; period: string; }
 interface UtilityResult { id: string; name: string; slug: string; segment?: string; customerCount?: number; }
@@ -66,12 +74,23 @@ interface SubstationProps {
   STATE?: string;
   TYPE?: string;
   STATUS?: string;
-  MAX_VOLT?: number;
-  MIN_VOLT?: number;
+  MAX_VOLT?: number | string;
+  MIN_VOLT?: number | string;
   CITY?: string;
   COUNTY?: string;
   ZIP?: string;
-  LINES?: number;
+  LINES?: number | string;
+  SOURCE?: string;
+  LATITUDE?: number | string;
+  LONGITUDE?: number | string;
+}
+
+interface PriceRow {
+  id: string;
+  name: string;
+  value: string;
+  unit: string;
+  period: string;
 }
 
 interface LineProps {
@@ -324,6 +343,75 @@ async function fetchOdinStatus(): Promise<OdinUtility[]> {
 
 const MAJOR_BAS = ['PJM', 'MISO', 'ERCO', 'CISO', 'NYIS', 'ISNE', 'SWPP', 'SOCO', 'TVA', 'BPAT'] as const;
 
+
+async function fetchEnergyPrices(): Promise<PriceRow[]> {
+  if (!EIA_KEY) return [];
+  const rows: PriceRow[] = [];
+  try {
+    const url = new URL('https://api.eia.gov/v2/electricity/retail-sales/data/');
+    url.searchParams.set('api_key', EIA_KEY);
+    url.searchParams.set('frequency', 'monthly');
+    url.searchParams.set('data[0]', 'price');
+    url.searchParams.append('facets[stateid][]', 'US');
+    url.searchParams.set('sort[0][column]', 'period');
+    url.searchParams.set('sort[0][direction]', 'desc');
+    url.searchParams.set('length', '24');
+    const res = await fetch(url.toString());
+    if (res.ok) {
+      const json = await res.json();
+      const data = (json.response?.data || []) as Array<Record<string, unknown>>;
+      const latest: Record<string, Record<string, unknown>> = {};
+      for (const r of data) {
+        const id = String(r.sectorid || '');
+        if (id && !latest[id] && r.price != null) latest[id] = r;
+      }
+      const labels: Record<string, string> = {
+        RES: 'Retail · Residential',
+        COM: 'Retail · Commercial',
+        IND: 'Retail · Industrial',
+        TRA: 'Retail · Transportation',
+        ALL: 'Retail · All sectors',
+      };
+      for (const [id, r] of Object.entries(latest)) {
+        rows.push({
+          id: `elec-${id}`,
+          name: labels[id] || String(r.sectorName || id),
+          value: Number(r.price).toFixed(2),
+          unit: '¢/kWh',
+          period: String(r.period || ''),
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    const url = new URL('https://api.eia.gov/v2/natural-gas/pri/fut/data/');
+    url.searchParams.set('api_key', EIA_KEY);
+    url.searchParams.set('frequency', 'daily');
+    url.searchParams.set('data[0]', 'value');
+    url.searchParams.append('facets[series][]', 'RNGWHHD');
+    url.searchParams.set('sort[0][column]', 'period');
+    url.searchParams.set('sort[0][direction]', 'desc');
+    url.searchParams.set('length', '3');
+    const res = await fetch(url.toString());
+    if (res.ok) {
+      const json = await res.json();
+      const r = (json.response?.data || [])[0];
+      if (r?.value != null) {
+        rows.push({
+          id: 'ng-hh',
+          name: 'Natural gas · Henry Hub spot',
+          value: Number(r.value).toFixed(2),
+          unit: '$/MMBtu',
+          period: String(r.period || ''),
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  return rows;
+}
+
 async function fetchBaDemand(): Promise<BaDemand[]> {
   if (!EIA_KEY) return [];
   const url = new URL('https://api.eia.gov/v2/electricity/rto/region-data/data/');
@@ -421,6 +509,14 @@ export default function App() {
     hawaii: true,
   });
   const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: true });
+  const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
+    '220-287': true,
+    '345': true,
+    '500': true,
+    '735': true,
+    'DC': true,
+  });
+  const [minKv, setMinKv] = useState(230);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<UtilityResult[]>([]);
   const [fuelData, setFuelData] = useState<FuelPoint[]>([]);
@@ -443,6 +539,8 @@ export default function App() {
   const [baDemand, setBaDemand] = useState<BaDemand[]>([]);
   const [quakes, setQuakes] = useState<Quake[]>([]);
   const [showQuakes, setShowQuakes] = useState(true);
+  const [energyPrices, setEnergyPrices] = useState<PriceRow[]>([]);
+  const [pricesUpdated, setPricesUpdated] = useState<Date | null>(null);
 
   const loadLive = useCallback(async () => {
     setLoading(true);
@@ -491,6 +589,22 @@ export default function App() {
     const id = setInterval(loadLive, 15 * 60 * 1000);
     return () => clearInterval(id);
   }, [loadLive]);
+
+  const loadPrices = useCallback(async () => {
+    try {
+      const rows = await fetchEnergyPrices();
+      setEnergyPrices(rows);
+      setPricesUpdated(new Date());
+    } catch {
+      /* non-critical */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPrices();
+    const id = setInterval(loadPrices, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [loadPrices]);
 
   useEffect(() => {
     PLANT_REGIONS.forEach((r) => {
@@ -558,6 +672,68 @@ export default function App() {
       properties: { mag: q.mag, place: q.place, time: q.time, depth: q.depth, id: q.id },
     })),
   }), [quakes]);
+
+  const gridStress = useMemo(() => {
+    // PROXY only — not measured bus voltage or VAR from SCADA/PMU (not public).
+    let score = 0;
+    const reasons: string[] = [];
+    const severe = nwsAlerts.filter((a) => a.severity === 'Extreme' || a.severity === 'Severe').length;
+    if (severe > 0) {
+      score += Math.min(40, severe * 8);
+      reasons.push(`${severe} severe/extreme weather alert(s)`);
+    }
+    const totalOut = odinUtils.reduce((s, u) => s + u.totalOutages, 0);
+    if (totalOut > 50000) {
+      score += 25;
+      reasons.push(`High reported outages (${totalOut.toLocaleString()})`);
+    } else if (totalOut > 10000) {
+      score += 12;
+      reasons.push(`Elevated outages (${totalOut.toLocaleString()})`);
+    }
+    if (latestDemand && totalGen > 0) {
+      const d = Number(latestDemand.value);
+      const ratio = d / totalGen;
+      if (ratio > 1.02) {
+        score += 20;
+        reasons.push('Demand above reported generation mix total');
+      } else if (ratio > 0.95) {
+        score += 10;
+        reasons.push('Tight demand vs generation');
+      }
+    }
+    if (quakes.some((q) => q.mag >= 6)) {
+      score += 15;
+      reasons.push('M6+ earthquake in last 24h');
+    }
+    score = Math.min(100, score);
+    const level = score >= 70 ? 'High' : score >= 35 ? 'Elevated' : 'Low';
+    const color = score >= 70 ? '#ef4444' : score >= 35 ? '#f59e0b' : '#22c55e';
+    // Reactive support need tracks stress (illustrative)
+    const varNeed = score >= 70 ? 'Elevated support need' : score >= 35 ? 'Monitor' : 'Nominal';
+    return { score, level, color, reasons, varNeed };
+  }, [nwsAlerts, odinUtils, latestDemand, totalGen, quakes]);
+
+  const lineFilterExpr = useMemo(() => {
+    const enabledClasses: string[] = [];
+    for (const opt of VOLT_FILTER_OPTIONS) {
+      if (voltFilters[opt.id]) enabledClasses.push(...opt.classes);
+    }
+    // MapLibre filter: class in enabled OR (missing class but voltage >= minKv)
+    // Structure: ['all', ['>=', voltage, minKv], ['any', ...class matches, no-class fallback]]
+    const classMatch: unknown[] = ['any'];
+    for (const c of enabledClasses) {
+      classMatch.push(['==', ['get', 'VOLT_CLASS'], c]);
+    }
+    // If no classes selected, show nothing
+    if (enabledClasses.length === 0) {
+      return ['==', ['get', 'VOLT_CLASS'], '__none__'] as unknown[];
+    }
+    return [
+      'all',
+      ['>=', ['coalesce', ['to-number', ['get', 'VOLTAGE']], 0], minKv],
+      classMatch,
+    ] as unknown[];
+  }, [voltFilters, minKv]);
 
   const subCount = useMemo(() => {
     let n = 0;
@@ -750,8 +926,74 @@ export default function App() {
                   onChange={() => setLayers((p) => ({ ...p, lines: !p.lines }))}
                 />
                 <span className="layer-swatch" style={{ background: '#94a3b8' }} />
-                Transmission ≥230 kV (national HV sample)
+                Transmission lines (HV sample)
               </label>
+              {layers.lines && (
+                <div className="volt-filter">
+                  <div className="volt-filter-title">Voltage filter</div>
+                  <div className="volt-filter-row">
+                    <label className="volt-min-label">
+                      Min kV: <strong>{minKv}</strong>
+                    </label>
+                    <input
+                      type="range"
+                      min={230}
+                      max={765}
+                      step={5}
+                      value={minKv}
+                      onChange={(e) => setMinKv(Number(e.target.value))}
+                      className="volt-slider"
+                    />
+                  </div>
+                  <div className="volt-filter-classes">
+                    {VOLT_FILTER_OPTIONS.map((opt) => (
+                      <label key={opt.id} className="volt-chip">
+                        <input
+                          type="checkbox"
+                          checked={!!voltFilters[opt.id]}
+                          onChange={() =>
+                            setVoltFilters((prev) => ({ ...prev, [opt.id]: !prev[opt.id] }))
+                          }
+                        />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="volt-filter-actions">
+                    <button
+                      type="button"
+                      className="btn btn-ghost volt-btn"
+                      onClick={() =>
+                        setVoltFilters({
+                          '220-287': true,
+                          '345': true,
+                          '500': true,
+                          '735': true,
+                          'DC': true,
+                        })
+                      }
+                    >
+                      All classes
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost volt-btn"
+                      onClick={() => {
+                        setVoltFilters({
+                          '220-287': false,
+                          '345': false,
+                          '500': true,
+                          '735': true,
+                          'DC': true,
+                        });
+                        setMinKv(500);
+                      }}
+                    >
+                      ≥500 kV only
+                    </button>
+                  </div>
+                </div>
+              )}
               <label className="layer-item">
                 <input
                   type="checkbox"
@@ -904,6 +1146,27 @@ export default function App() {
             </div>
           </div>
 
+          <div className="sidebar-section">
+            <h3>Map legend</h3>
+            <div className="legend-inline">
+              <div className="legend-section">Plants</div>
+              {[
+                ['Gas', '#f97316'], ['Coal', '#64748b'], ['Nuclear', '#a855f7'],
+                ['Wind', '#06b6d4'], ['Solar', '#eab308'], ['Hydro', '#3b82f6'],
+              ].map(([k, c]) => (
+                <div className="legend-item" key={k}>
+                  <span className="legend-swatch" style={{ background: c as string }} />
+                  {k}
+                </div>
+              ))}
+              <div className="legend-section">Lines / subs</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: '#f87171' }} />≥500 kV</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: '#fbbf24' }} />345 kV</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: '#38bdf8' }} />220–287 kV</div>
+              <div className="legend-item"><span className="legend-swatch" style={{ background: '#22d3ee' }} />Substation</div>
+            </div>
+          </div>
+
           <div className="sidebar-section" style={{ flex: 1 }}>
             <h3>About & limits</h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
@@ -931,7 +1194,7 @@ export default function App() {
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
-            <NavigationControl position="top-right" />
+            <NavigationControl position="bottom-right" showCompass={false} />
 
             {layers.interconnects && interconnectGeojson && (
               <Source id="interconnects" type="geojson" data={interconnectGeojson}>
@@ -961,6 +1224,7 @@ export default function App() {
                 <Layer
                   id="lines-hit"
                   type="line"
+                  filter={lineFilterExpr as any}
                   paint={{
                     'line-color': '#000000',
                     'line-opacity': 0,
@@ -975,6 +1239,7 @@ export default function App() {
                 <Layer
                   id="lines-line"
                   type="line"
+                  filter={lineFilterExpr as any}
                   paint={{
                     'line-color': [
                       'match', ['coalesce', ['get', 'VOLT_CLASS'], ''],
@@ -1034,13 +1299,13 @@ export default function App() {
                   <Layer
                     id={`subs-circle-${r.id}`}
                     type="circle"
-                    minzoom={5}
+                    minzoom={4}
                     paint={{
                       'circle-radius': [
                         'interpolate', ['linear'], ['zoom'],
-                        5, 1.5,
-                        8, 3,
-                        12, 6,
+                        4, 2,
+                        7, 4,
+                        11, 8,
                       ],
                       'circle-color': [
                         'match', ['downcase', ['coalesce', ['get', 'TYPE'], 'substation']],
@@ -1127,7 +1392,7 @@ export default function App() {
                   <div className="plant-popup">
                     <div className="plant-popup-title">{plantPopup.substation.NAME || 'Substation'}</div>
                     <div className="plant-popup-row">
-                      <span>Type</span>
+                      <span>Facility type</span>
                       <strong>{plantPopup.substation.TYPE || '—'}</strong>
                     </div>
                     <div className="plant-popup-row">
@@ -1137,29 +1402,53 @@ export default function App() {
                     <div className="plant-popup-row">
                       <span>Max voltage</span>
                       <strong>
-                        {plantPopup.substation.MAX_VOLT != null
+                        {plantPopup.substation.MAX_VOLT != null && plantPopup.substation.MAX_VOLT !== ''
                           ? `${Number(plantPopup.substation.MAX_VOLT)} kV`
                           : '—'}
                       </strong>
                     </div>
                     <div className="plant-popup-row">
-                      <span>Lines</span>
-                      <strong>{plantPopup.substation.LINES ?? '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Location</span>
+                      <span>Min voltage</span>
                       <strong>
-                        {[plantPopup.substation.CITY, plantPopup.substation.COUNTY, plantPopup.substation.STATE]
-                          .filter(Boolean)
-                          .join(', ') || '—'}
+                        {plantPopup.substation.MIN_VOLT != null && plantPopup.substation.MIN_VOLT !== ''
+                          ? `${Number(plantPopup.substation.MIN_VOLT)} kV`
+                          : '—'}
                       </strong>
                     </div>
-                    {plantPopup.substation.ZIP && (
-                      <div className="plant-popup-row">
-                        <span>ZIP</span>
-                        <strong>{plantPopup.substation.ZIP}</strong>
-                      </div>
-                    )}
+                    <div className="plant-popup-row">
+                      <span>Connected lines</span>
+                      <strong>
+                        {plantPopup.substation.LINES != null && plantPopup.substation.LINES !== ''
+                          ? String(plantPopup.substation.LINES)
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>City</span>
+                      <strong>{plantPopup.substation.CITY || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>County</span>
+                      <strong>{plantPopup.substation.COUNTY || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>State</span>
+                      <strong>{plantPopup.substation.STATE || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>ZIP</span>
+                      <strong>{plantPopup.substation.ZIP || '—'}</strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Coordinates</span>
+                      <strong>
+                        {plantPopup.lat.toFixed(5)}, {plantPopup.lon.toFixed(5)}
+                      </strong>
+                    </div>
+                    <div className="plant-popup-row">
+                      <span>Data source</span>
+                      <strong>{plantPopup.substation.SOURCE || 'HIFLD-derived / open'}</strong>
+                    </div>
                   </div>
                 ) : (
                   <div className="plant-popup">
@@ -1200,7 +1489,7 @@ export default function App() {
             Live outages not included (see About). EIA demand/fuel mix ~1 hr lag.
           </div>
 
-          <div className="legend">
+          <div className="legend legend-map-hidden">
             <h4>Map legend</h4>
             <div className="legend-section">Plants (fuel)</div>
             {[
@@ -1239,6 +1528,57 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        <aside className="sidebar-right">
+          <div className="sidebar-section">
+            <h3>Energy prices (EIA)</h3>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+              Auto-refresh 5 min · retail is monthly; gas spot is daily
+              {pricesUpdated ? ` · ${pricesUpdated.toLocaleTimeString()}` : ''}
+            </div>
+            {energyPrices.length === 0 && (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading prices…</div>
+            )}
+            {energyPrices.map((r) => (
+              <div className="price-row" key={r.id}>
+                <span className="price-name" title={r.period}>{r.name}</span>
+                <span className="price-val">{r.value} {r.unit}</span>
+              </div>
+            ))}
+            <p className="disclaimer-tiny">
+              Public EIA series only. Not ISO real-time LMP. Fuel-specific wholesale power prices by source are not published as a single live national feed.
+            </p>
+          </div>
+
+          <div className="sidebar-section">
+            <h3>Voltage sag risk (proxy)</h3>
+            <div className="stress-level" style={{ color: gridStress.color }}>{gridStress.level} · {gridStress.score}/100</div>
+            <div className="stress-meter">
+              <div style={{ width: `${gridStress.score}%`, background: gridStress.color }} />
+            </div>
+            {gridStress.reasons.length === 0 ? (
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No elevated stress factors from public feeds.</div>
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                {gridStress.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            )}
+            <p className="disclaimer-tiny">
+              Not measured bus voltage or PMU sag events. Score is a situational proxy from weather alerts, ODIN outage counts, demand/gen, and quakes. True sag detection requires utility SCADA (not public).
+            </p>
+          </div>
+
+          <div className="sidebar-section">
+            <h3>Reactive power support (proxy)</h3>
+            <div className="stress-level" style={{ color: gridStress.color }}>{gridStress.varNeed}</div>
+            <p className="disclaimer-tiny">
+              Dynamic VAR / reactive compensation setpoints are operational and not released as a national public API. This indicator mirrors grid stress only as a planning cue for EOCs—not a dispatch signal.
+            </p>
+          </div>
+        </aside>
+
       </div>
     </div>
   );

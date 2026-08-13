@@ -430,3 +430,141 @@ a {
   max-height: 50vh;
   overflow-y: auto;
 }
+
+.volt-filter {
+  margin: 6px 0 10px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.volt-filter-title {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #94a3b8);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.volt-filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.volt-min-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.volt-slider {
+  width: 100%;
+  accent-color: #38bdf8;
+}
+
+.volt-filter-classes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 6px;
+}
+
+.volt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-secondary, #cbd5e1);
+  cursor: pointer;
+}
+
+.volt-chip input {
+  accent-color: #38bdf8;
+}
+
+.volt-filter-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.volt-btn {
+  font-size: 0.7rem !important;
+  padding: 2px 8px !important;
+}
+
+
+.map-container .maplibregl-ctrl-top-right {
+  top: 12px;
+  right: 12px;
+}
+
+.map-container .maplibregl-ctrl-bottom-right {
+  bottom: 28px;
+  right: 12px;
+}
+
+.map-container .maplibregl-ctrl-bottom-left {
+  bottom: 28px;
+  left: 12px;
+}
+
+.map-overlay-info {
+  max-width: 280px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 2;
+}
+
+.price-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.78rem;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.price-name {
+  color: var(--text-secondary, #cbd5e1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price-val {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #4ade80;
+  flex-shrink: 0;
+}
+
+.stress-meter {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+  margin: 6px 0 10px;
+}
+
+.stress-meter > div {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.stress-level {
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.disclaimer-tiny {
+  font-size: 0.68rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.35;
+  margin-top: 6px;
+}
