@@ -172,45 +172,55 @@ const GRID_ALERT_EVENTS = new Set([
 ]);
 
 async function fetchNwsAlerts(): Promise<NwsAlert[]> {
-  const res = await fetch('https://api.weather.gov/alerts/active', {
-    headers: {
-      'User-Agent': 'PowerGridXplr/1.0 (https://github.com/jasonsaro-ops/PowerGridXplr)',
-      Accept: 'application/geo+json',
-    },
-  });
-  if (!res.ok) throw new Error(`NWS alerts ${res.status}`);
-  const json = await res.json();
-  const features = json.features || [];
-  const out: NwsAlert[] = [];
-  for (const f of features) {
-    const p = f.properties || {};
+  const rank: Record<string, number> = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
+  const sortAlerts = (out: NwsAlert[]) =>
+    out.sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9) || a.event.localeCompare(b.event));
+
+  const fromFeatureProps = (p: Record<string, unknown>, idFallback: string): NwsAlert | null => {
     const event = String(p.event || '');
+    if (/^Test Message$/i.test(event)) return null;
     if (!GRID_ALERT_EVENTS.has(event) && !/Wind|Ice|Heat|Fire|Flood|Tornado|Hurricane|Blizzard|Storm/i.test(event)) {
-      continue;
+      return null;
     }
-    // skip pure test messages
-    if (/^Test Message$/i.test(event)) continue;
-    out.push({
-      id: String(p.id || f.id || Math.random()),
+    return {
+      id: String(p.id || idFallback),
       event,
       severity: String(p.severity || 'Unknown'),
       urgency: String(p.urgency || ''),
       headline: String(p.headline || p.event || ''),
       area: String(p.areaDesc || '').split(';')[0].trim(),
-      onset: p.onset,
-      ends: p.ends || p.expires,
+      onset: p.onset ? String(p.onset) : undefined,
+      ends: p.ends ? String(p.ends) : p.expires ? String(p.expires) : undefined,
+    };
+  };
+
+  // Live NWS (CORS allows *)
+  try {
+    const res = await fetch('https://api.weather.gov/alerts/active?status=actual', {
+      headers: { Accept: 'application/geo+json' },
     });
+    if (res.ok) {
+      const json = await res.json();
+      const out: NwsAlert[] = [];
+      for (const f of json.features || []) {
+        const a = fromFeatureProps(f.properties || {}, String(f.id || Math.random()));
+        if (a) out.push(a);
+      }
+      return sortAlerts(out);
+    }
+  } catch { /* fall through to snapshot */ }
+
+  // Same-origin snapshot fallback (bundled at build / updated by workflow)
+  const snap = await fetch(`${BASE}data/nws_alerts.json`, { cache: 'no-store' });
+  if (!snap.ok) throw new Error(`NWS unavailable (live + snapshot failed)`);
+  const data = await snap.json();
+  if (Array.isArray(data.alerts)) {
+    return sortAlerts(data.alerts as NwsAlert[]);
   }
-  // severity rank
-  const rank: Record<string, number> = { Extreme: 0, Severe: 1, Moderate: 2, Minor: 3, Unknown: 4 };
-  out.sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9) || a.event.localeCompare(b.event));
-  return out;
+  throw new Error('NWS snapshot empty');
 }
 
-async function fetchOdinStatus(): Promise<OdinUtility[]> {
-  const res = await fetch('https://odin.ornl.gov/odi/status');
-  if (!res.ok) throw new Error(`ODIN ${res.status}`);
-  const data = await res.json();
+function parseOdinList(data: unknown): OdinUtility[] {
   if (!Array.isArray(data)) return [];
   return data
     .map((x: Record<string, unknown>) => ({
@@ -222,6 +232,40 @@ async function fetchOdinStatus(): Promise<OdinUtility[]> {
     }))
     .filter((x: OdinUtility) => x.totalOutages > 0)
     .sort((a: OdinUtility, b: OdinUtility) => b.totalOutages - a.totalOutages);
+}
+
+/** ODIN does not send Access-Control-Allow-Origin; try direct then same-origin cache. */
+async function fetchOdinStatus(): Promise<OdinUtility[]> {
+  // 1) Prefer same-origin snapshot (written by optional GH Action or manual refresh)
+  try {
+    const local = await fetch(`${BASE}data/odin_status.json`, { cache: 'no-store' });
+    if (local.ok) {
+      const data = await local.json();
+      const list = parseOdinList(data.utilities || data);
+      if (list.length || data.utilities) return list;
+    }
+  } catch { /* continue */ }
+
+  // 2) Direct (works in some environments; fails in browser if CORS blocked)
+  try {
+    const res = await fetch('https://odin.ornl.gov/odi/status');
+    if (res.ok) return parseOdinList(await res.json());
+  } catch { /* CORS expected on GitHub Pages */ }
+
+  // 3) Public read-only CORS relay (GET only, public government JSON)
+  const target = encodeURIComponent('https://odin.ornl.gov/odi/status');
+  const proxies = [
+    `https://corsproxy.io/?${target}`,
+    `https://api.allorigins.win/raw?url=${target}`,
+  ];
+  for (const url of proxies) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      return parseOdinList(await res.json());
+    } catch { /* try next */ }
+  }
+  throw new Error('ODIN blocked by CORS (no public snapshot)');
 }
 
 function severityColor(sev: string): string {
@@ -299,13 +343,18 @@ export default function App() {
       setStatusOk(false);
     }
 
+    const hazardMsgs: string[] = [];
     try {
-      const [alerts, odin] = await Promise.all([fetchNwsAlerts(), fetchOdinStatus()]);
-      setNwsAlerts(alerts);
-      setOdinUtils(odin);
+      setNwsAlerts(await fetchNwsAlerts());
     } catch (e: unknown) {
-      setHazardError(e instanceof Error ? e.message : 'Hazard feeds failed');
+      hazardMsgs.push(`NWS: ${e instanceof Error ? e.message : 'failed'}`);
     }
+    try {
+      setOdinUtils(await fetchOdinStatus());
+    } catch (e: unknown) {
+      hazardMsgs.push(`ODIN: ${e instanceof Error ? e.message : 'failed'}`);
+    }
+    setHazardError(hazardMsgs.length ? hazardMsgs.join(' · ') : null);
 
     setLastUpdated(new Date());
     setLoading(false);
