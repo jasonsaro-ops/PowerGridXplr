@@ -68,6 +68,23 @@ interface NwsAlert {
   ends?: string;
 }
 
+interface BaDemand {
+  code: string;
+  name: string;
+  value: number;
+  period: string;
+}
+
+interface Quake {
+  id: string;
+  mag: number;
+  place: string;
+  time: number;
+  lon: number;
+  lat: number;
+  depth: number;
+}
+
 interface OdinUtility {
   name: string;
   totalOutages: number;
@@ -270,6 +287,60 @@ async function fetchOdinStatus(): Promise<OdinUtility[]> {
   throw new Error('ODIN blocked by CORS (no public snapshot)');
 }
 
+
+const MAJOR_BAS = ['PJM', 'MISO', 'ERCO', 'CISO', 'NYIS', 'ISNE', 'SWPP', 'SOCO', 'TVA', 'BPAT'] as const;
+
+async function fetchBaDemand(): Promise<BaDemand[]> {
+  if (!EIA_KEY) return [];
+  const url = new URL('https://api.eia.gov/v2/electricity/rto/region-data/data/');
+  url.searchParams.set('api_key', EIA_KEY);
+  url.searchParams.set('frequency', 'hourly');
+  url.searchParams.set('data[0]', 'value');
+  url.searchParams.append('facets[type][]', 'D');
+  for (const ba of MAJOR_BAS) url.searchParams.append('facets[respondent][]', ba);
+  url.searchParams.set('sort[0][column]', 'period');
+  url.searchParams.set('sort[0][direction]', 'desc');
+  url.searchParams.set('length', '40');
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`EIA BA ${res.status}`);
+  const json = await res.json();
+  const rows = (json.response?.data || []) as Array<Record<string, unknown>>;
+  const latest: Record<string, BaDemand> = {};
+  for (const r of rows) {
+    const code = String(r.respondent || '');
+    if (!code || latest[code]) continue;
+    latest[code] = {
+      code,
+      name: String(r['respondent-name'] || code),
+      value: Number(r.value) || 0,
+      period: String(r.period || ''),
+    };
+  }
+  return Object.values(latest).sort((a, b) => b.value - a.value);
+}
+
+async function fetchUsgsQuakes(): Promise<Quake[]> {
+  const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson');
+  if (!res.ok) throw new Error(`USGS ${res.status}`);
+  const json = await res.json();
+  const out: Quake[] = [];
+  for (const f of json.features || []) {
+    const coords = f.geometry?.coordinates || [];
+    const p = f.properties || {};
+    if (coords.length < 2) continue;
+    out.push({
+      id: String(f.id || p.code || Math.random()),
+      mag: Number(p.mag) || 0,
+      place: String(p.place || ''),
+      time: Number(p.time) || 0,
+      lon: Number(coords[0]),
+      lat: Number(coords[1]),
+      depth: Number(coords[2]) || 0,
+    });
+  }
+  return out.sort((a, b) => b.mag - a.mag);
+}
+
 function severityColor(sev: string): string {
   switch (sev) {
     case 'Extreme': return '#ef4444';
@@ -333,19 +404,33 @@ export default function App() {
   const [nwsAlerts, setNwsAlerts] = useState<NwsAlert[]>([]);
   const [odinUtils, setOdinUtils] = useState<OdinUtility[]>([]);
   const [hazardError, setHazardError] = useState<string | null>(null);
+  const [baDemand, setBaDemand] = useState<BaDemand[]>([]);
+  const [quakes, setQuakes] = useState<Quake[]>([]);
+  const [showQuakes, setShowQuakes] = useState(true);
 
   const loadLive = useCallback(async () => {
     setLoading(true);
     setError(null);
     setHazardError(null);
     try {
-      const [fuel, demand] = await Promise.all([fetchEiaFuelMix(), fetchEiaDemand()]);
+      const [fuel, demand, bas] = await Promise.all([
+        fetchEiaFuelMix(),
+        fetchEiaDemand(),
+        fetchBaDemand().catch(() => [] as BaDemand[]),
+      ]);
       setFuelData(fuel);
       setDemandData(demand);
+      setBaDemand(bas);
       setStatusOk(true);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to fetch EIA data');
       setStatusOk(false);
+    }
+
+    try {
+      setQuakes(await fetchUsgsQuakes());
+    } catch {
+      /* non-critical */
     }
 
     const hazardMsgs: string[] = [];
@@ -422,6 +507,15 @@ export default function App() {
   }, [demandData]);
 
   const totalGen = useMemo(() => fuelMix.reduce((s, f) => s + f.value, 0), [fuelMix]);
+
+  const quakesGeo = useMemo((): FeatureCollection => ({
+    type: 'FeatureCollection',
+    features: quakes.map((q) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [q.lon, q.lat] },
+      properties: { mag: q.mag, place: q.place, time: q.time, depth: q.depth, id: q.id },
+    })),
+  }), [quakes]);
 
   const plantCount = useMemo(() => {
     let n = 0;
@@ -616,6 +710,51 @@ export default function App() {
           </div>
 
           <div className="sidebar-section">
+            <h3>Major BA demand (EIA)</h3>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+              Hourly demand by balancing authority · public EIA-930
+            </div>
+            <div className="hazard-list">
+              {baDemand.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading BA demand…</div>
+              )}
+              {baDemand.map((b) => (
+                <div className="odin-row" key={b.code}>
+                  <span className="odin-name" title={b.name}>{b.code} · {b.name.replace(/, LLC|, Inc\.?.*$/i, '')}</span>
+                  <span className="odin-count" style={{ color: '#38bdf8' }}>{formatMWh(b.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="sidebar-section">
+            <h3>USGS M4.5+ quakes (24h)</h3>
+            <label className="layer-item" style={{ marginBottom: 8 }}>
+              <input type="checkbox" checked={showQuakes} onChange={() => setShowQuakes((v) => !v)} />
+              Show on map
+            </label>
+            <div className="hazard-list">
+              {quakes.length === 0 && (
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>None in last 24h (or loading…)</div>
+              )}
+              {quakes.slice(0, 8).map((q) => (
+                <div
+                  className="hazard-item"
+                  key={q.id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => mapRef.current?.flyTo({ center: [q.lon, q.lat], zoom: 6, duration: 1200 })}
+                >
+                  <span className="hazard-sev" style={{ background: q.mag >= 6 ? '#ef4444' : q.mag >= 5 ? '#f97316' : '#eab308' }} />
+                  <div>
+                    <div className="hazard-event">M{q.mag.toFixed(1)} · {q.place}</div>
+                    <div className="hazard-area">{q.time ? new Date(q.time).toLocaleString() : ''}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="sidebar-section">
             <h3>NWS grid-relevant alerts</h3>
             {hazardError && <div className="error-banner">{hazardError}</div>}
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
@@ -659,7 +798,7 @@ export default function App() {
           <div className="sidebar-section" style={{ flex: 1 }}>
             <h3>About & limits</h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              Legal public data: EIA hourly RTO, NWS alerts, ODIN status (ORNL), CommonGrid (ODbL), Nominatim (ODbL), open plant archives.
+              Legal public data: EIA hourly RTO + BA demand, NWS alerts, ODIN (ORNL), USGS quakes, CommonGrid, Nominatim, open plant/line archives.
               Auto-refresh 15 min. Data lag ~1 hour.
             </p>
             <p style={{ fontSize: '0.75rem', color: 'var(--warning)', lineHeight: 1.5, marginTop: 10 }}>
@@ -741,6 +880,32 @@ export default function App() {
                   <Layer id={`plants-circle-${r.id}`} type="circle" paint={plantCirclePaint as any} />
                 </Source>
               ) : null
+            )}
+
+            {showQuakes && quakes.length > 0 && (
+              <Source id="quakes-src" type="geojson" data={quakesGeo}>
+                <Layer
+                  id="quakes-circle"
+                  type="circle"
+                  paint={{
+                    'circle-radius': [
+                      'interpolate', ['linear'], ['get', 'mag'],
+                      4.5, 6,
+                      6, 12,
+                      7, 18,
+                    ],
+                    'circle-color': [
+                      'interpolate', ['linear'], ['get', 'mag'],
+                      4.5, '#eab308',
+                      5.5, '#f97316',
+                      6.5, '#ef4444',
+                    ],
+                    'circle-opacity': 0.75,
+                    'circle-stroke-width': 1,
+                    'circle-stroke-color': '#fff',
+                  }}
+                />
+              </Source>
             )}
 
             {plantPopup && (
