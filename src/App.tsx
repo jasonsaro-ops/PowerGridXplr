@@ -344,9 +344,42 @@ async function fetchOdinStatus(): Promise<OdinUtility[]> {
 const MAJOR_BAS = ['PJM', 'MISO', 'ERCO', 'CISO', 'NYIS', 'ISNE', 'SWPP', 'SOCO', 'TVA', 'BPAT'] as const;
 
 
+
+async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
+  if (!EIA_KEY) return null;
+  try {
+    const url = new URL('https://api.eia.gov/v2/petroleum/pri/spt/data/');
+    url.searchParams.set('api_key', EIA_KEY);
+    url.searchParams.set('frequency', 'daily');
+    url.searchParams.set('data[0]', 'value');
+    url.searchParams.append('facets[series][]', series);
+    url.searchParams.set('sort[0][column]', 'period');
+    url.searchParams.set('sort[0][direction]', 'desc');
+    url.searchParams.set('length', '1');
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const json = await res.json();
+    const r = (json.response?.data || [])[0];
+    if (!r || r.value == null) return null;
+    const desc = String(r['series-description'] || r['product-name'] || series);
+    const units = String(r.units || '');
+    return {
+      id: `pet-${series}`,
+      name: desc.replace(' (Dollars per Barrel)', '').replace(' (Dollars per Gallon)', '').replace(' Spot Price FOB', '').replace(' Spot Price', ''),
+      value: Number(r.value).toFixed(units.includes('BBL') ? 2 : 3),
+      unit: units.includes('BBL') ? '$/bbl' : units.includes('GAL') ? '$/gal' : units || '$',
+      period: String(r.period || ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchEnergyPrices(): Promise<PriceRow[]> {
   if (!EIA_KEY) return [];
   const rows: PriceRow[] = [];
+
+  // Retail electricity by sector (monthly)
   try {
     const url = new URL('https://api.eia.gov/v2/electricity/retail-sales/data/');
     url.searchParams.set('api_key', EIA_KEY);
@@ -366,11 +399,11 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
         if (id && !latest[id] && r.price != null) latest[id] = r;
       }
       const labels: Record<string, string> = {
-        RES: 'Retail · Residential',
-        COM: 'Retail · Commercial',
-        IND: 'Retail · Industrial',
-        TRA: 'Retail · Transportation',
-        ALL: 'Retail · All sectors',
+        RES: 'Electricity retail · Residential',
+        COM: 'Electricity retail · Commercial',
+        IND: 'Electricity retail · Industrial',
+        TRA: 'Electricity retail · Transportation',
+        ALL: 'Electricity retail · All sectors',
       };
       for (const [id, r] of Object.entries(latest)) {
         rows.push({
@@ -384,6 +417,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
     }
   } catch { /* ignore */ }
 
+  // Henry Hub gas
   try {
     const url = new URL('https://api.eia.gov/v2/natural-gas/pri/fut/data/');
     url.searchParams.set('api_key', EIA_KEY);
@@ -392,7 +426,7 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
     url.searchParams.append('facets[series][]', 'RNGWHHD');
     url.searchParams.set('sort[0][column]', 'period');
     url.searchParams.set('sort[0][direction]', 'desc');
-    url.searchParams.set('length', '3');
+    url.searchParams.set('length', '1');
     const res = await fetch(url.toString());
     if (res.ok) {
       const json = await res.json();
@@ -403,6 +437,90 @@ async function fetchEnergyPrices(): Promise<PriceRow[]> {
           name: 'Natural gas · Henry Hub spot',
           value: Number(r.value).toFixed(2),
           unit: '$/MMBtu',
+          period: String(r.period || ''),
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Crude + products (daily spots)
+  const petSeries = [
+    'RWTC', // WTI
+    'RBRTE', // Brent
+    'EER_EPMRU_PF4_RGC_DPG', // GC conventional gasoline
+    'EER_EPD2DXL0_PF4_RGC_DPG', // ULSD diesel
+    'EER_EPD2F_PF4_Y35NY_DPG', // NY heating oil
+    'EER_EPJK_PF4_RGC_DPG', // jet fuel
+  ];
+  const pet = await Promise.all(petSeries.map((s) => fetchPetroleumSpot(s)));
+  for (const row of pet) {
+    if (row) rows.push(row);
+  }
+
+  // Imported crude FOB costs (monthly) - try WORLD / US
+  try {
+    const url = new URL('https://api.eia.gov/v2/petroleum/pri/imc1/data/');
+    url.searchParams.set('api_key', EIA_KEY);
+    url.searchParams.set('frequency', 'monthly');
+    url.searchParams.set('data[0]', 'value');
+    url.searchParams.set('sort[0][column]', 'period');
+    url.searchParams.set('sort[0][direction]', 'desc');
+    url.searchParams.set('length', '30');
+    const res = await fetch(url.toString());
+    if (res.ok) {
+      const json = await res.json();
+      const data = (json.response?.data || []) as Array<Record<string, unknown>>;
+      // pick latest US / World rows with value
+      const seen = new Set<string>();
+      for (const r of data) {
+        if (r.value == null) continue;
+        const area = String(r['area-name'] || r.area || r.duoarea || '');
+        const key = area || String(r.series || '');
+        if (seen.has(key)) continue;
+        // keep a few important areas
+        const interesting = /world|united states|persian|saudi|canada|mexico|nigeria|brazil/i.test(area);
+        if (!interesting && seen.size > 0) continue;
+        if (!interesting) continue;
+        seen.add(key);
+        rows.push({
+          id: `imp-crude-${key}`.slice(0, 40),
+          name: `Imported crude FOB · ${area || 'selected'}`,
+          value: Number(r.value).toFixed(2),
+          unit: String(r.units || '$/bbl').includes('BBL') ? '$/bbl' : String(r.units || '$/bbl'),
+          period: String(r.period || ''),
+        });
+        if (seen.size >= 6) break;
+      }
+    }
+  } catch { /* ignore */ }
+
+  // LNG / pipeline export-ish gas citygate or export if available via sum
+  try {
+    const url = new URL('https://api.eia.gov/v2/natural-gas/pri/sum/data/');
+    url.searchParams.set('api_key', EIA_KEY);
+    url.searchParams.set('frequency', 'monthly');
+    url.searchParams.set('data[0]', 'value');
+    url.searchParams.append('facets[duoarea][]', 'NUS');
+    url.searchParams.set('sort[0][column]', 'period');
+    url.searchParams.set('sort[0][direction]', 'desc');
+    url.searchParams.set('length', '40');
+    const res = await fetch(url.toString());
+    if (res.ok) {
+      const json = await res.json();
+      const data = (json.response?.data || []) as Array<Record<string, unknown>>;
+      const want = /export|citygate|electric power|industrial|residential/i;
+      const latest: Record<string, Record<string, unknown>> = {};
+      for (const r of data) {
+        const proc = String(r['process-name'] || r.process || '');
+        if (!want.test(proc) || r.value == null) continue;
+        if (!latest[proc]) latest[proc] = r;
+      }
+      for (const [proc, r] of Object.entries(latest)) {
+        rows.push({
+          id: `ng-${proc}`.slice(0, 40),
+          name: `Natural gas · ${proc}`,
+          value: Number(r.value).toFixed(2),
+          unit: String(r.units || '$/Mcf'),
           period: String(r.period || ''),
         });
       }
@@ -541,6 +659,12 @@ export default function App() {
   const [showQuakes, setShowQuakes] = useState(true);
   const [energyPrices, setEnergyPrices] = useState<PriceRow[]>([]);
   const [pricesUpdated, setPricesUpdated] = useState<Date | null>(null);
+  const [pmuStatus] = useState<{ mode: string; detail: string }>({
+    mode: 'unavailable',
+    detail: import.meta.env.VITE_PMU_ENDPOINT
+      ? 'Custom endpoint configured — connect PDC/stream in deployment'
+      : 'No public live US PMU stream. Historical research sets (PNNL/GESL) only.',
+  });
 
   const loadLive = useCallback(async () => {
     setLoading(true);
@@ -1533,9 +1657,17 @@ export default function App() {
           <div className="sidebar-section">
             <h3>Energy prices (EIA)</h3>
             <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 8 }}>
-              Auto-refresh 5 min · retail is monthly; gas spot is daily
+              Auto-refresh 5 min · crude/products daily · retail monthly
               {pricesUpdated ? ` · ${pricesUpdated.toLocaleTimeString()}` : ''}
             </div>
+            <button
+              type="button"
+              className="btn btn-ghost volt-btn"
+              style={{ marginBottom: 8 }}
+              onClick={() => loadPrices()}
+            >
+              Refresh prices now
+            </button>
             {energyPrices.length === 0 && (
               <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Loading prices…</div>
             )}
@@ -1547,6 +1679,19 @@ export default function App() {
             ))}
             <p className="disclaimer-tiny">
               Public EIA series only. Not ISO real-time LMP. Fuel-specific wholesale power prices by source are not published as a single live national feed.
+            </p>
+          </div>
+
+          <div className="sidebar-section">
+            <h3>PMU / synchrophasor</h3>
+            <div className="stress-level" style={{ color: pmuStatus.mode === 'live' ? '#22c55e' : '#94a3b8' }}>
+              {pmuStatus.mode === 'live' ? 'Live endpoint' : 'Not connected'}
+            </div>
+            <p className="disclaimer-tiny">{pmuStatus.detail}</p>
+            <p className="disclaimer-tiny">
+              Live US utility PMU data is operational (IEEE C37.118) and not published as a free national API.
+              Optional: set VITE_PMU_ENDPOINT in build secrets when you have a licensed PDC feed.
+              Open historical libraries (e.g. PNNL event sets / GESL) are for research, not real-time EOC telemetry.
             </p>
           </div>
 
