@@ -1633,6 +1633,7 @@ export default function App() {
           <div className="map-overlay-info">
             Click plant / line / sub for details
           </div>
+        </div>
 
         <button
           type="button"
