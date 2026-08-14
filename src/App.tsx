@@ -20,9 +20,9 @@ const FUEL_LABELS: Record<string, string> = {
 };
 
 const PLANT_REGIONS = [
-  { id: 'northeast', label: 'Northeast (ISO-NE / NYISO / PJM East)', file: 'plants_northeast.geojson' },
+  { id: 'northeast', label: 'Northeast (ISO-NE / NYISO / PJM East + ME/DC)', file: 'plants_northeast.geojson' },
   { id: 'southeast', label: 'Southeast', file: 'plants_southeast.geojson' },
-  { id: 'midwest', label: 'Midwest (MISO / PJM West)', file: 'plants_midwest.geojson' },
+  { id: 'midwest', label: 'Midwest / Plains (MISO + ND/SD/NE/KS)', file: 'plants_midwest.geojson' },
   { id: 'southcentral', label: 'South Central / ERCOT area', file: 'plants_southcentral.geojson' },
   { id: 'west', label: 'West (CAISO / WECC)', file: 'plants_west.geojson' },
   { id: 'alaska', label: 'Alaska Interconnection', file: 'plants_alaska.geojson' },
@@ -124,10 +124,11 @@ interface LineProps {
 interface PopupState {
   lon: number;
   lat: number;
-  kind: 'plant' | 'substation' | 'line';
+  kind: 'plant' | 'substation' | 'line' | 'ev';
   plant?: PlantProps;
   substation?: SubstationProps;
   line?: LineProps;
+  ev?: Record<string, unknown>;
 }
 
 interface NwsAlert {
@@ -822,7 +823,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: true });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: true, tesla: false, otherEv: false });
   const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
     '220-287': true,
     '345': true,
@@ -843,6 +844,8 @@ export default function App() {
   const [linesGeojson, setLinesGeojson] = useState<FeatureCollection | null>(null);
   const [interconnectGeojson, setInterconnectGeojson] = useState<FeatureCollection | null>(null);
   const [subData, setSubData] = useState<Record<string, FeatureCollection | null>>({});
+  const [teslaGeojson, setTeslaGeojson] = useState<FeatureCollection | null>(null);
+  const [otherEvGeojson, setOtherEvGeojson] = useState<FeatureCollection | null>(null);
   const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast: true, midwest: true, southcentral: true, west: true, alaska: true, hawaii: true });
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
@@ -986,6 +989,14 @@ export default function App() {
         .then((gj) => gj && setSubData((prev) => ({ ...prev, [r.id]: gj })))
         .catch((e) => console.warn('Substations load failed', r.id, e));
     });
+    fetch(`${BASE}data/ev_tesla.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setTeslaGeojson(gj))
+      .catch((e) => console.warn('Tesla EV load failed', e));
+    fetch(`${BASE}data/ev_other.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setOtherEvGeojson(gj))
+      .catch((e) => console.warn('Other EV load failed', e));
   }, []);
 
   useEffect(() => {
@@ -1159,6 +1170,8 @@ export default function App() {
       ...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`),
       ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`),
       'lines-hit',
+      'ev-tesla-circle',
+      'ev-other-circle',
     ];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
@@ -1171,7 +1184,9 @@ export default function App() {
       (f) =>
         plantLayers.includes(f.layer?.id || '') ||
         subLayers.includes(f.layer?.id || '') ||
-        f.layer?.id === 'lines-hit'
+        f.layer?.id === 'lines-hit' ||
+        f.layer?.id === 'ev-tesla-circle' ||
+        f.layer?.id === 'ev-other-circle'
     );
     if (!feat) {
       setPlantPopup(null);
@@ -1184,6 +1199,18 @@ export default function App() {
         lat: e.lngLat.lat,
         kind: 'line',
         line: props as unknown as LineProps,
+      });
+      return;
+    }
+    if (feat.layer?.id === 'ev-tesla-circle' || feat.layer?.id === 'ev-other-circle') {
+      const coords = feat.geometry.type === 'Point'
+        ? (feat.geometry.coordinates as [number, number])
+        : [e.lngLat.lng, e.lngLat.lat];
+      setPlantPopup({
+        lon: coords[0],
+        lat: coords[1],
+        kind: 'ev',
+        ev: props,
       });
       return;
     }
@@ -1432,6 +1459,30 @@ export default function App() {
                   </span>
                 </label>
               ))}
+              <label className="layer-item">
+                <input
+                  type="checkbox"
+                  checked={layers.tesla}
+                  onChange={() => setLayers((p) => ({ ...p, tesla: !p.tesla }))}
+                />
+                <span className="layer-swatch" style={{ background: '#cc0000' }} />
+                Tesla Superchargers
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {teslaGeojson ? teslaGeojson.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
+                <input
+                  type="checkbox"
+                  checked={layers.otherEv}
+                  onChange={() => setLayers((p) => ({ ...p, otherEv: !p.otherEv }))}
+                />
+                <span className="layer-swatch" style={{ background: '#22c55e' }} />
+                Other EV chargers
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {otherEvGeojson ? otherEvGeojson.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
             </div>
             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
               Click any plant for details. Interconnection outlines are approximate footprints (not official NERC boundaries). Transmission is a high-voltage (≥230 kV) open-data sample.
@@ -1654,6 +1705,8 @@ export default function App() {
               <div className="legend-item"><span className="legend-line" style={{ background: '#fbbf24' }} />345 kV</div>
               <div className="legend-item"><span className="legend-line" style={{ background: '#38bdf8' }} />220–287 kV</div>
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#22d3ee' }} />Substation</div>
+              <div className="legend-item"><span className="legend-swatch" style={{ background: '#e11d48' }} />Tesla SC</div>
+              <div className="legend-item"><span className="legend-swatch" style={{ background: '#22c55e' }} />Other EV</div>
             </div>
           </div>
 
@@ -1680,7 +1733,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -1841,6 +1894,39 @@ export default function App() {
               </Source>
             )}
 
+            {layers.tesla && teslaGeojson && (
+              <Source id="ev-tesla" type="geojson" data={teslaGeojson}>
+                <Layer
+                  id="ev-tesla-circle"
+                  type="circle"
+                  minzoom={3}
+                  paint={{
+                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2, 8, 5, 12, 8],
+                    'circle-color': '#e11d48',
+                    'circle-opacity': 0.85,
+                    'circle-stroke-width': 0.5,
+                    'circle-stroke-color': '#fff',
+                  }}
+                />
+              </Source>
+            )}
+            {layers.otherEv && otherEvGeojson && (
+              <Source id="ev-other" type="geojson" data={otherEvGeojson}>
+                <Layer
+                  id="ev-other-circle"
+                  type="circle"
+                  minzoom={5}
+                  paint={{
+                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 2, 9, 4, 12, 7],
+                    'circle-color': '#22c55e',
+                    'circle-opacity': 0.75,
+                    'circle-stroke-width': 0.4,
+                    'circle-stroke-color': '#0a0e14',
+                  }}
+                />
+              </Source>
+            )}
+
             {plantPopup && (
               <Popup
                 longitude={plantPopup.lon}
@@ -1877,6 +1963,20 @@ export default function App() {
                       <span>Owner</span>
                       <strong>{plantPopup.line.OWNER || '—'}</strong>
                     </div>
+                  </div>
+                ) : plantPopup.kind === 'ev' && plantPopup.ev ? (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">{String(plantPopup.ev.name || 'EV station')}</div>
+                    <div className="plant-popup-row"><span>Network</span><strong>{String(plantPopup.ev.network || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.ev.status || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Stalls / spots</span><strong>{plantPopup.ev.stalls != null ? String(plantPopup.ev.stalls) : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>kW / stall</span><strong>{plantPopup.ev.kw_per_stall != null ? `${plantPopup.ev.kw_per_stall} kW` : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Site MW capacity</span><strong>{plantPopup.ev.mw_capacity != null ? `${plantPopup.ev.mw_capacity} MW` : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Live load</span><strong>Not public</strong></div>
+                    <div className="plant-popup-row"><span>Access</span><strong>{String(plantPopup.ev.access || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.ev.operator || plantPopup.ev.brand || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Location</span><strong>{[plantPopup.ev.address, plantPopup.ev.city, plantPopup.ev.state].filter(Boolean).join(', ') || '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.ev.source || 'OSM')}</strong></div>
                   </div>
                 ) : plantPopup.kind === 'substation' && plantPopup.substation ? (
                   <div className="plant-popup">
