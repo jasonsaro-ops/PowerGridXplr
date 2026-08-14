@@ -1,0 +1,513 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -74.325,
+            40.469
+          ],
+          [
+            -74.1,
+            40.52
+          ],
+          [
+            -73.9,
+            40.58
+          ],
+          [
+            -73.7,
+            40.62
+          ],
+          [
+            -73.55,
+            40.65
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Neptune RTS",
+        "link_type": "HVDC submarine",
+        "mw": 660,
+        "kv": "\u00b1500",
+        "status": "operating",
+        "from_end": "Sayreville, NJ",
+        "to_end": "New York, NY ( Duffy Ave / 13th Ave area)",
+        "operator": "Neptune Regional Transmission System",
+        "notes": "Undersea HVDC New Jersey\u2013Long Island",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -72.908,
+            41.287
+          ],
+          [
+            -72.85,
+            41.2
+          ],
+          [
+            -72.8,
+            41.1
+          ],
+          [
+            -72.85,
+            40.95
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Cross Sound Cable",
+        "link_type": "HVDC submarine",
+        "mw": 330,
+        "kv": "\u00b1150",
+        "status": "operating",
+        "from_end": "New Haven, CT",
+        "to_end": "Shoreham, NY",
+        "operator": "Cross-Sound Cable Company",
+        "notes": "Long Island Sound submarine HVDC",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -77.738,
+            53.726
+          ],
+          [
+            -76.5,
+            50.0
+          ],
+          [
+            -74.0,
+            47.0
+          ],
+          [
+            -72.25,
+            46.08
+          ],
+          [
+            -71.8,
+            45.0
+          ],
+          [
+            -71.6,
+            43.5
+          ],
+          [
+            -71.52,
+            42.57
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Qu\u00e9bec\u2013New England HVDC (Phase II)",
+        "link_type": "HVDC overhead / multi-terminal",
+        "mw": 2000,
+        "kv": "\u00b1450",
+        "status": "operating",
+        "from_end": "Radisson, QC",
+        "to_end": "Sandy Pond, MA (Ayer)",
+        "operator": "Hydro-Qu\u00e9bec / National Grid",
+        "notes": "Cross-border Canada\u2013US HVDC; multi-terminal historic",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -121.114,
+            45.594
+          ],
+          [
+            -121.0,
+            43.5
+          ],
+          [
+            -119.5,
+            40.0
+          ],
+          [
+            -118.8,
+            37.0
+          ],
+          [
+            -118.5,
+            35.0
+          ],
+          [
+            -118.485,
+            34.311
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Pacific DC Intertie (PDCI)",
+        "link_type": "HVDC overhead",
+        "mw": 3100,
+        "kv": "\u00b1500",
+        "status": "operating",
+        "from_end": "Celilo, OR",
+        "to_end": "Sylmar, CA",
+        "operator": "BPA / LADWP",
+        "notes": "Major domestic west-coast HVDC (OR\u2013CA)",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -112.73,
+            39.35
+          ],
+          [
+            -115.0,
+            37.5
+          ],
+          [
+            -116.5,
+            35.5
+          ],
+          [
+            -117.4,
+            34.56
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Intermountain Power Project HVDC",
+        "link_type": "HVDC overhead",
+        "mw": 2400,
+        "kv": "\u00b1500",
+        "status": "operating",
+        "from_end": "Delta, UT",
+        "to_end": "Adelanto, CA",
+        "operator": "LADWP et al.",
+        "notes": "Utah\u2013Southern California HVDC",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -101.15,
+            47.38
+          ],
+          [
+            -98.0,
+            46.5
+          ],
+          [
+            -95.5,
+            45.5
+          ],
+          [
+            -93.75,
+            45.1
+          ]
+        ]
+      },
+      "properties": {
+        "name": "CU Project HVDC",
+        "link_type": "HVDC overhead",
+        "mw": 1000,
+        "kv": "\u00b1400",
+        "status": "operating",
+        "from_end": "Coal Creek, ND",
+        "to_end": "Rockford, MN",
+        "operator": "Minnkota / cooperative partners",
+        "notes": "North Dakota\u2013Minnesota HVDC",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -101.29,
+            47.11
+          ],
+          [
+            -97.0,
+            47.0
+          ],
+          [
+            -93.5,
+            46.85
+          ],
+          [
+            -92.15,
+            46.75
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Square Butte HVDC",
+        "link_type": "HVDC overhead",
+        "mw": 500,
+        "kv": "\u00b1250",
+        "status": "operating",
+        "from_end": "Center, ND",
+        "to_end": "Arrowhead (Duluth area), MN",
+        "operator": "Minnkota Power",
+        "notes": "North Dakota\u2013Minnesota HVDC",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -121.88,
+            38.03
+          ],
+          [
+            -122.2,
+            37.9
+          ],
+          [
+            -122.38,
+            37.78
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Trans Bay Cable",
+        "link_type": "HVDC submarine",
+        "mw": 400,
+        "kv": "\u00b1200",
+        "status": "operating",
+        "from_end": "Pittsburg, CA",
+        "to_end": "San Francisco, CA",
+        "operator": "Trans Bay Cable LLC",
+        "notes": "San Francisco Bay submarine HVDC",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.55,
+            45.0
+          ],
+          [
+            -73.45,
+            44.5
+          ],
+          [
+            -73.4,
+            43.5
+          ],
+          [
+            -73.75,
+            42.5
+          ],
+          [
+            -73.9,
+            41.5
+          ],
+          [
+            -73.92,
+            40.78
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Champlain Hudson Power Express (CHPE)",
+        "link_type": "HVDC buried / submarine",
+        "mw": 1250,
+        "kv": "\u00b1400",
+        "status": "under construction / commissioning",
+        "from_end": "Hertel, QC / US border",
+        "to_end": "Astoria, NY",
+        "operator": "Transmission Developers / Hydro-Qu\u00e9bec",
+        "notes": "Cross-border Qu\u00e9bec\u2013NYC HVDC via Lake Champlain & Hudson",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -70.55,
+            46.0
+          ],
+          [
+            -70.4,
+            45.0
+          ],
+          [
+            -70.25,
+            44.5
+          ],
+          [
+            -70.2,
+            44.1
+          ]
+        ]
+      },
+      "properties": {
+        "name": "New England Clean Energy Connect (NECEC)",
+        "link_type": "HVDC / HV corridor",
+        "mw": 1200,
+        "kv": "320",
+        "status": "operating / recent COD",
+        "from_end": "Qu\u00e9bec border / Beattie Twp, ME",
+        "to_end": "Lewiston, ME",
+        "operator": "AVANGRID / Hydro-Qu\u00e9bec",
+        "notes": "Qu\u00e9bec\u2013Maine renewable corridor",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.0,
+            44.98
+          ],
+          [
+            -72.98,
+            45.01
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Highgate Converter (QC\u2013VT)",
+        "link_type": "HVDC back-to-back",
+        "mw": 225,
+        "kv": "\u2014",
+        "status": "operating",
+        "from_end": "Highgate, VT",
+        "to_end": "Qu\u00e9bec interconnection",
+        "operator": "Vermont Electric Power / Hydro-Qu\u00e9bec",
+        "notes": "Back-to-back HVDC at US\u2013Canada border",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -68.35,
+            47.35
+          ],
+          [
+            -68.2,
+            47.25
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Madawaska / Eel River area (NB\u2013ME ties)",
+        "link_type": "AC / HV intertie corridor",
+        "mw": null,
+        "kv": "345",
+        "status": "operating",
+        "from_end": "New Brunswick",
+        "to_end": "Maine",
+        "operator": "Various",
+        "notes": "Canada\u2013US border intertie region (NB\u2013ME)",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -97.2,
+            49.0
+          ],
+          [
+            -97.1,
+            48.5
+          ],
+          [
+            -96.8,
+            48.0
+          ]
+        ]
+      },
+      "properties": {
+        "name": "Manitoba\u2013US interties (corridor)",
+        "link_type": "HV intertie corridor",
+        "mw": null,
+        "kv": "500",
+        "status": "operating",
+        "from_end": "Manitoba",
+        "to_end": "Minnesota / North Dakota",
+        "operator": "Manitoba Hydro / MISO partners",
+        "notes": "Canada\u2013US high-voltage border ties",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -122.8,
+            49.05
+          ],
+          [
+            -122.7,
+            48.8
+          ],
+          [
+            -122.5,
+            48.5
+          ]
+        ]
+      },
+      "properties": {
+        "name": "BC\u2013US Pacific Northwest interties (corridor)",
+        "link_type": "HV intertie corridor",
+        "mw": null,
+        "kv": "500",
+        "status": "operating",
+        "from_end": "British Columbia",
+        "to_end": "Washington",
+        "operator": "BC Hydro / BPA",
+        "notes": "Canada\u2013US Pacific Northwest border ties",
+        "source": "Public converter endpoints (approximate corridor)"
+      }
+    }
+  ]
+}

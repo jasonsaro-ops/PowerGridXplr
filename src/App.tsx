@@ -31,10 +31,13 @@ const PLANT_REGIONS = [
 
 const SUB_REGIONS = [
   { id: 'northeast', label: 'NE substations', file: 'substations_northeast.geojson' },
-  { id: 'southeast', label: 'SE substations', file: 'substations_southeast.geojson' },
-  { id: 'midwest', label: 'Midwest substations', file: 'substations_midwest.geojson' },
+  { id: 'southeast_p1', label: 'SE substations (1/2)', file: 'substations_southeast_p1.geojson' },
+  { id: 'southeast_p2', label: 'SE substations (2/2)', file: 'substations_southeast_p2.geojson' },
+  { id: 'midwest_p1', label: 'Midwest substations (1/2)', file: 'substations_midwest_p1.geojson' },
+  { id: 'midwest_p2', label: 'Midwest substations (2/2)', file: 'substations_midwest_p2.geojson' },
   { id: 'southcentral', label: 'South Central substations', file: 'substations_southcentral.geojson' },
-  { id: 'west', label: 'West substations', file: 'substations_west.geojson' },
+  { id: 'west_p1', label: 'West substations (1/2)', file: 'substations_west_p1.geojson' },
+  { id: 'west_p2', label: 'West substations (2/2)', file: 'substations_west_p2.geojson' },
   { id: 'alaska', label: 'Alaska substations', file: 'substations_alaska.geojson' },
   { id: 'hawaii', label: 'Hawaii substations', file: 'substations_hawaii.geojson' },
 ] as const;
@@ -124,11 +127,14 @@ interface LineProps {
 interface PopupState {
   lon: number;
   lat: number;
-  kind: 'plant' | 'substation' | 'line' | 'ev';
+  kind: 'plant' | 'substation' | 'line' | 'ev' | 'battery' | 'offshore' | 'cable';
   plant?: PlantProps;
   substation?: SubstationProps;
   line?: LineProps;
   ev?: Record<string, unknown>;
+  battery?: Record<string, unknown>;
+  offshore?: Record<string, unknown>;
+  cable?: Record<string, unknown>;
 }
 
 interface NwsAlert {
@@ -903,7 +909,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: true, tesla: false, otherEv: false });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: true, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true });
   const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
     '220-287': true,
     '345': true,
@@ -926,7 +932,13 @@ export default function App() {
   const [subData, setSubData] = useState<Record<string, FeatureCollection | null>>({});
   const [teslaGeojson, setTeslaGeojson] = useState<FeatureCollection | null>(null);
   const [otherEvGeojson, setOtherEvGeojson] = useState<FeatureCollection | null>(null);
-  const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast: true, midwest: true, southcentral: true, west: true, alaska: true, hawaii: true });
+  const [batteryGeojson, setBatteryGeojson] = useState<FeatureCollection | null>(null);
+  const [offshoreTurbines, setOffshoreTurbines] = useState<FeatureCollection | null>(null);
+  const [offshoreLeases, setOffshoreLeases] = useState<FeatureCollection | null>(null);
+  const [subseaCables, setSubseaCables] = useState<FeatureCollection | null>(null);
+  const [offshoreIx, setOffshoreIx] = useState<FeatureCollection | null>(null);
+  const [hvdcGeojson, setHvdcGeojson] = useState<FeatureCollection | null>(null);
+  const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast_p1: true, southeast_p2: true, midwest_p1: true, midwest_p2: true, southcentral: true, west_p1: true, west_p2: true, alaska: true, hawaii: true });
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
   const [cursor, setCursor] = useState<'default' | 'pointer'>('default');
@@ -1077,6 +1089,30 @@ export default function App() {
       .then((res) => (res.ok ? res.json() : null))
       .then((gj) => gj && setOtherEvGeojson(gj))
       .catch((e) => console.warn('Other EV load failed', e));
+    fetch(`${BASE}data/battery_storage.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setBatteryGeojson(gj))
+      .catch((e) => console.warn('Battery load failed', e));
+    fetch(`${BASE}data/offshore_wind_turbines.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setOffshoreTurbines(gj))
+      .catch((e) => console.warn('Offshore turbines failed', e));
+    fetch(`${BASE}data/offshore_wind_leases.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setOffshoreLeases(gj))
+      .catch((e) => console.warn('Offshore leases failed', e));
+    fetch(`${BASE}data/subsea_export_cables.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setSubseaCables(gj))
+      .catch((e) => console.warn('Subsea cables failed', e));
+    fetch(`${BASE}data/offshore_interconnections.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setOffshoreIx(gj))
+      .catch((e) => console.warn('Offshore IX failed', e));
+    fetch(`${BASE}data/hvdc_interties.geojson`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((gj) => gj && setHvdcGeojson(gj))
+      .catch((e) => console.warn('HVDC load failed', e));
   }, []);
 
   useEffect(() => {
@@ -1252,6 +1288,11 @@ export default function App() {
       'lines-hit',
       'ev-tesla-circle',
       'ev-other-circle',
+      'battery-circle',
+      'ow-turbines-circle',
+      'ow-ix-circle',
+      'subsea-cables-hit',
+      'hvdc-hit',
     ];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
@@ -1266,7 +1307,12 @@ export default function App() {
         subLayers.includes(f.layer?.id || '') ||
         f.layer?.id === 'lines-hit' ||
         f.layer?.id === 'ev-tesla-circle' ||
-        f.layer?.id === 'ev-other-circle'
+        f.layer?.id === 'ev-other-circle' ||
+        f.layer?.id === 'battery-circle' ||
+        f.layer?.id === 'ow-turbines-circle' ||
+        f.layer?.id === 'ow-ix-circle' ||
+        f.layer?.id === 'subsea-cables-hit' ||
+        f.layer?.id === 'hvdc-hit'
     );
     if (!feat) {
       setPlantPopup(null);
@@ -1286,12 +1332,25 @@ export default function App() {
       const coords = feat.geometry.type === 'Point'
         ? (feat.geometry.coordinates as [number, number])
         : [e.lngLat.lng, e.lngLat.lat];
-      setPlantPopup({
-        lon: coords[0],
-        lat: coords[1],
-        kind: 'ev',
-        ev: props,
-      });
+      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'ev', ev: props });
+      return;
+    }
+    if (feat.layer?.id === 'battery-circle') {
+      const coords = feat.geometry.type === 'Point'
+        ? (feat.geometry.coordinates as [number, number])
+        : [e.lngLat.lng, e.lngLat.lat];
+      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'battery', battery: props });
+      return;
+    }
+    if (feat.layer?.id === 'ow-turbines-circle' || feat.layer?.id === 'ow-ix-circle') {
+      const coords = feat.geometry.type === 'Point'
+        ? (feat.geometry.coordinates as [number, number])
+        : [e.lngLat.lng, e.lngLat.lat];
+      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'offshore', offshore: props });
+      return;
+    }
+    if (feat.layer?.id === 'subsea-cables-hit' || feat.layer?.id === 'hvdc-hit') {
+      setPlantPopup({ lon: e.lngLat.lng, lat: e.lngLat.lat, kind: 'cable', cable: props });
       return;
     }
     if (feat.geometry.type === 'Point') {
@@ -1563,6 +1622,46 @@ export default function App() {
                   {otherEvGeojson ? otherEvGeojson.features.length.toLocaleString() : '…'}
                 </span>
               </label>
+              <label className="layer-item">
+                <input type="checkbox" checked={layers.battery} onChange={() => setLayers((p) => ({ ...p, battery: !p.battery }))} />
+                <span className="layer-swatch" style={{ background: '#a3e635' }} />
+                Battery storage (BESS)
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {batteryGeojson ? batteryGeojson.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
+                <input type="checkbox" checked={layers.offshoreWind} onChange={() => setLayers((p) => ({ ...p, offshoreWind: !p.offshoreWind }))} />
+                <span className="layer-swatch" style={{ background: '#38bdf8' }} />
+                Offshore wind turbines
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {offshoreTurbines ? offshoreTurbines.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
+                <input type="checkbox" checked={layers.offshoreLeases} onChange={() => setLayers((p) => ({ ...p, offshoreLeases: !p.offshoreLeases }))} />
+                <span className="layer-swatch" style={{ background: '#0ea5e9', opacity: 0.5 }} />
+                BOEM wind lease areas
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {offshoreLeases ? offshoreLeases.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
+                <input type="checkbox" checked={layers.subseaCables} onChange={() => setLayers((p) => ({ ...p, subseaCables: !p.subseaCables }))} />
+                <span className="layer-swatch" style={{ background: '#c084fc' }} />
+                Subsea export cables
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {subseaCables ? subseaCables.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
+                <input type="checkbox" checked={layers.hvdc} onChange={() => setLayers((p) => ({ ...p, hvdc: !p.hvdc }))} />
+                <span className="layer-swatch" style={{ background: '#f472b6' }} />
+                HVDC / cross-border interties
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {hvdcGeojson ? hvdcGeojson.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
             </div>
             <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
               Click any plant for details. Interconnection outlines are approximate footprints (not official NERC boundaries). Transmission is a high-voltage (≥230 kV) open-data sample.
@@ -1787,6 +1886,10 @@ export default function App() {
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#22d3ee' }} />Substation</div>
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#e11d48' }} />Tesla SC</div>
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#22c55e' }} />Other EV</div>
+              <div className="legend-item"><span className="legend-swatch" style={{ background: '#a3e635' }} />Battery BESS</div>
+              <div className="legend-item"><span className="legend-swatch" style={{ background: '#38bdf8' }} />Offshore wind</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: '#c084fc' }} />Subsea cable</div>
+              <div className="legend-item"><span className="legend-line" style={{ background: '#f472b6' }} />HVDC intertie</div>
             </div>
           </div>
 
@@ -1813,7 +1916,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -2006,6 +2109,65 @@ export default function App() {
                 />
               </Source>
             )}
+            {layers.battery && batteryGeojson && (
+              <Source id="battery-src" type="geojson" data={batteryGeojson}>
+                <Layer id="battery-circle" type="circle" paint={{
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 3, 8, 7, 12, 10],
+                  'circle-color': '#a3e635',
+                  'circle-opacity': 0.85,
+                  'circle-stroke-width': 1,
+                  'circle-stroke-color': '#365314',
+                }} />
+              </Source>
+            )}
+            {layers.offshoreLeases && offshoreLeases && (
+              <Source id="ow-leases" type="geojson" data={offshoreLeases}>
+                <Layer id="ow-leases-fill" type="fill" paint={{ 'fill-color': '#0ea5e9', 'fill-opacity': 0.12 }} />
+                <Layer id="ow-leases-line" type="line" paint={{ 'line-color': '#0284c7', 'line-width': 1.2, 'line-opacity': 0.7 }} />
+              </Source>
+            )}
+            {layers.subseaCables && subseaCables && (
+              <Source id="subsea-cables" type="geojson" data={subseaCables}>
+                <Layer id="subsea-cables-line" type="line" paint={{
+                  'line-color': '#c084fc',
+                  'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.5, 8, 3, 12, 5],
+                  'line-opacity': 0.85,
+                }} />
+                <Layer id="subsea-cables-hit" type="line" paint={{ 'line-color': '#c084fc', 'line-width': 12, 'line-opacity': 0 }} />
+              </Source>
+            )}
+            {layers.hvdc && hvdcGeojson && (
+              <Source id="hvdc-src" type="geojson" data={hvdcGeojson}>
+                <Layer id="hvdc-line" type="line" paint={{
+                  'line-color': '#f472b6',
+                  'line-width': ['interpolate', ['linear'], ['zoom'], 3, 2.5, 8, 4, 12, 6],
+                  'line-opacity': 0.9,
+                  'line-dasharray': [2, 1],
+                }} />
+                <Layer id="hvdc-hit" type="line" paint={{ 'line-color': '#f472b6', 'line-width': 14, 'line-opacity': 0 }} />
+              </Source>
+            )}
+            {layers.offshoreWind && offshoreTurbines && (
+              <Source id="ow-turbines" type="geojson" data={offshoreTurbines}>
+                <Layer id="ow-turbines-circle" type="circle" paint={{
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 2, 7, 4, 11, 7],
+                  'circle-color': '#38bdf8',
+                  'circle-opacity': 0.85,
+                  'circle-stroke-width': 0.5,
+                  'circle-stroke-color': '#fff',
+                }} />
+              </Source>
+            )}
+            {layers.offshoreWind && offshoreIx && (
+              <Source id="ow-ix" type="geojson" data={offshoreIx}>
+                <Layer id="ow-ix-circle" type="circle" paint={{
+                  'circle-radius': 6,
+                  'circle-color': '#f472b6',
+                  'circle-stroke-width': 1,
+                  'circle-stroke-color': '#fff',
+                }} />
+              </Source>
+            )}
 
             {plantPopup && (
               <Popup
@@ -2057,6 +2219,42 @@ export default function App() {
                     <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.ev.operator || plantPopup.ev.brand || '—')}</strong></div>
                     <div className="plant-popup-row"><span>Location</span><strong>{[plantPopup.ev.address, plantPopup.ev.city, plantPopup.ev.state].filter(Boolean).join(', ') || '—'}</strong></div>
                     <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.ev.source || 'OSM')}</strong></div>
+                  </div>
+                ) : plantPopup.kind === 'battery' && plantPopup.battery ? (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">{String(plantPopup.battery.name || 'Battery storage')}</div>
+                    <div className="plant-popup-row"><span>Capacity</span><strong>{plantPopup.battery.mw != null ? `${plantPopup.battery.mw} MW` : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.battery.fuel || 'batteries')}</strong></div>
+                    <div className="plant-popup-row"><span>Utility</span><strong>{String(plantPopup.battery.utility || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Location</span><strong>{[plantPopup.battery.city, plantPopup.battery.county, plantPopup.battery.state].filter(Boolean).join(', ') || '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.battery.source || 'EIA/HIFLD')}</strong></div>
+                  </div>
+                ) : plantPopup.kind === 'offshore' && plantPopup.offshore ? (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">{String(plantPopup.offshore.name || plantPopup.offshore.project || 'Offshore facility')}</div>
+                    <div className="plant-popup-row"><span>Project</span><strong>{String(plantPopup.offshore.project || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Developer</span><strong>{String(plantPopup.offshore.developer || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Lease</span><strong>{String(plantPopup.offshore.lease || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Max MW</span><strong>{plantPopup.offshore.max_mw != null ? String(plantPopup.offshore.max_mw) : (plantPopup.offshore.mw != null ? String(plantPopup.offshore.mw) : '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.offshore.status || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Depth (m)</span><strong>{plantPopup.offshore.depth_m != null ? String(plantPopup.offshore.depth_m) : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.offshore.source || 'BOEM')}</strong></div>
+                  </div>
+                ) : plantPopup.kind === 'cable' && plantPopup.cable ? (
+                  <div className="plant-popup">
+                    <div className="plant-popup-title">{String(plantPopup.cable.name || 'Cable / intertie')}</div>
+                    <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.cable.link_type || plantPopup.cable.cable_type || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Project</span><strong>{String(plantPopup.cable.project || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.cable.operator || plantPopup.cable.developer || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>From</span><strong>{String(plantPopup.cable.from_end || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>To</span><strong>{String(plantPopup.cable.to_end || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Capacity</span><strong>{plantPopup.cable.mw != null ? `${plantPopup.cable.mw} MW` : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>kV</span><strong>{plantPopup.cable.kv != null ? String(plantPopup.cable.kv) : '—'}</strong></div>
+                    <div className="plant-popup-row"><span>Current</span><strong>{String(plantPopup.cable.current || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Burial (m)</span><strong>{String(plantPopup.cable.burial_m || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.cable.status || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Notes</span><strong>{String(plantPopup.cable.notes || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.cable.source || 'Public')}</strong></div>
                   </div>
                 ) : plantPopup.kind === 'substation' && plantPopup.substation ? (
                   <div className="plant-popup">
