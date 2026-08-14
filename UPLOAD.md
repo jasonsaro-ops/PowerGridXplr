@@ -1,49 +1,43 @@
-# Uploading to GitHub (avoid "file too large" / web UI failures)
+# Upload to GitHub — use git CLI (not the web UI)
 
-GitHub’s **web drag-and-drop** often fails on many medium-sized data files even when none exceed the 100 MB hard limit.
+The GitHub **website "Add file / upload"** often fails on repos with many multi-MB GeoJSON files even when every file is under the 100 MB limit.
 
-## Recommended: push from your computer
+## Do this on your computer
 
 ```bash
-# 1) Unzip this package
-unzip PowerGridXplr-github.zip
+# Download and unzip the package, then:
 cd powergridxplr
 
-# 2) If repo already exists on GitHub:
 git init
 git remote add origin https://github.com/YOUR_USER/PowerGridXplr.git
-git checkout -b main
+
+# If the remote already has commits:
+# git pull origin main --allow-unrelated-histories
+
 git add -A
-git commit -m "PowerGridXplr dashboard data and app"
-git push -u origin main --force   # only force if replacing a broken tree
+git commit -m "PowerGridXplr dashboard"
+git branch -M main
+git push -u origin main
 ```
 
-Or clone first, then copy files in:
+If the remote has an old broken tree and you want to replace it:
 
 ```bash
-git clone https://github.com/YOUR_USER/PowerGridXplr.git
-cd PowerGridXplr
-# copy contents of powergridxplr/ into this folder (overwrite)
-git add -A
-git commit -m "Update PowerGridXplr"
-git push
+git push -u origin main --force
 ```
 
-## If a single file is still rejected
+Only force-push if you intend to overwrite the remote history.
 
-GitHub hard limit is **100 MB per file**. After compaction, no GeoJSON in this package should approach that.
-
-Optional: Git LFS for the largest files:
+## Optional: Git LFS (if push still rejects a file)
 
 ```bash
 git lfs install
 git lfs track "public/data/*.geojson"
-git add .gitattributes
-git add public/data
-git commit -m "Track geojson with LFS"
+git add .gitattributes public/data
+git commit -m "Track large geojson with LFS"
 git push
 ```
 
 ## GitHub Pages
 
-After push, enable **Settings → Pages → Deploy from GitHub Actions** (workflow already included).
+Repo **Settings → Pages → Source: GitHub Actions** (workflow included).
