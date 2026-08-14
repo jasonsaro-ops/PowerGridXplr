@@ -909,7 +909,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true });
   const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
     '220-287': true,
     '345': true,
@@ -939,6 +939,7 @@ export default function App() {
   const [offshoreIx, setOffshoreIx] = useState<FeatureCollection | null>(null);
   const [hvdcGeojson, setHvdcGeojson] = useState<FeatureCollection | null>(null);
   const [ogPlatformsGeo, setOgPlatformsGeo] = useState<FeatureCollection | null>(null);
+  const [ogWellsGeo, setOgWellsGeo] = useState<FeatureCollection | null>(null);
   const [pipeNgGeo, setPipeNgGeo] = useState<FeatureCollection | null>(null);
   const [pipeCrudeGeo, setPipeCrudeGeo] = useState<FeatureCollection | null>(null);
   const [pipeHglGeo, setPipeHglGeo] = useState<FeatureCollection | null>(null);
@@ -1121,6 +1122,11 @@ export default function App() {
       .then((gj) => gj && setHvdcGeojson(gj))
       .catch((e) => console.warn('HVDC load failed', e));
     fetch(`${BASE}data/og_platforms.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setOgPlatformsGeo(g)).catch(()=>{});
+    Promise.all([1,2,3,4,5].map(i => fetch(`${BASE}data/og_wells_p${i}.geojson`).then(r=>r.ok?r.json():null)))
+      .then(parts => {
+        const feats = parts.flatMap(p => (p && p.features) || []);
+        if (feats.length) setOgWellsGeo({ type: 'FeatureCollection', features: feats });
+      }).catch(()=>{});
     fetch(`${BASE}data/pipelines_crude.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setPipeCrudeGeo(g)).catch(()=>{});
     fetch(`${BASE}data/pipelines_hgl.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setPipeHglGeo(g)).catch(()=>{});
     fetch(`${BASE}data/ng_compressors.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setCompressorsGeo(g)).catch(()=>{});
@@ -1317,7 +1323,7 @@ export default function App() {
       'subsea-cables-hit',
       'hvdc-hit',
       'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'pipe-subsea-hit',
-      'og-platforms-circle', 'ng-comp-circle', 'og-term-circle',
+      'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle',
     ];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
@@ -1338,7 +1344,7 @@ export default function App() {
         f.layer?.id === 'ow-ix-circle' ||
         f.layer?.id === 'subsea-cables-hit' ||
         f.layer?.id === 'hvdc-hit' ||
-        ['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','pipe-subsea-hit','og-platforms-circle','ng-comp-circle','og-term-circle'].includes(f.layer?.id || '')
+        ['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','pipe-subsea-hit','og-platforms-circle','og-wells-circle','ng-comp-circle','og-term-circle'].includes(f.layer?.id || '')
     );
     if (!feat) {
       setPlantPopup(null);
@@ -1388,6 +1394,18 @@ export default function App() {
         notes: [props.Pipename, props.pipename, props.TYPEPIPE].filter(Boolean).join(' · '),
         source: props.source || 'EIA/HIFLD/BOEM',
         kv: props.Diameter || props.diameter || '',
+      }});
+      return;
+    }
+    if (feat.layer?.id === 'og-wells-circle') {
+      const coords = feat.geometry.type === 'Point' ? (feat.geometry.coordinates as [number, number]) : [e.lngLat.lng, e.lngLat.lat];
+      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'cable', cable: {
+        name: String(props.well_name || props.name || props.api_wellnumber || 'OCS well'),
+        link_type: String(props.well_type_code || props.type || 'Well'),
+        operator: String(props.operator_name || props.operator || ''),
+        status: String(props.status || ''),
+        notes: [props.lease_number, props.area_code, props.block_number, props.water_depth != null ? `depth ${props.water_depth}` : ''].filter(Boolean).join(' · '),
+        source: String(props.source || 'BOEM/BSEE'),
       }});
       return;
     }
@@ -1745,6 +1763,14 @@ export default function App() {
                 </span>
               </label>
               <label className="layer-item">
+                <input type="checkbox" checked={layers.ogWells} onChange={() => setLayers((p) => ({ ...p, ogWells: !p.ogWells }))} />
+                <span className="layer-swatch" style={{ background: '#ca8a04' }} />
+                OCS oil/gas wells (BSEE)
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {ogWellsGeo ? ogWellsGeo.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
                 <input type="checkbox" checked={layers.pipeSubsea} onChange={() => setLayers((p) => ({ ...p, pipeSubsea: !p.pipeSubsea }))} />
                 <span className="layer-swatch" style={{ background: '#b45309' }} />
                 Subsea O&G pipelines
@@ -2046,7 +2072,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'ng-comp-circle', 'og-term-circle']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -2306,6 +2332,14 @@ export default function App() {
                 <Layer id="og-platforms-circle" type="circle" paint={{
                   'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2, 8, 4, 12, 6],
                   'circle-color': '#f59e0b', 'circle-opacity': 0.8, 'circle-stroke-width': 0.4, 'circle-stroke-color': '#fff',
+                }} />
+              </Source>
+            )}
+            {layers.ogWells && ogWellsGeo && (
+              <Source id="og-wells-src" type="geojson" data={ogWellsGeo}>
+                <Layer id="og-wells-circle" type="circle" minzoom={6} paint={{
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 10, 3, 13, 5],
+                  'circle-color': '#ca8a04', 'circle-opacity': 0.7, 'circle-stroke-width': 0.3, 'circle-stroke-color': '#713f12',
                 }} />
               </Source>
             )}
