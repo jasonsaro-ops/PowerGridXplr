@@ -1126,12 +1126,12 @@ export default function App() {
     fetch(`${BASE}data/ng_compressors.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setCompressorsGeo(g)).catch(()=>{});
     fetch(`${BASE}data/og_terminals.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setTerminalsGeo(g)).catch(()=>{});
     // multi-part pipelines
-    Promise.all([1,2].map(i => fetch(`${BASE}data/pipelines_natgas_p${i}.geojson`).then(r=>r.ok?r.json():null)))
+    Promise.all([1,2,3,4].map(i => fetch(`${BASE}data/pipelines_natgas_p${i}.geojson`).then(r=>r.ok?r.json():null)))
       .then(parts => {
         const feats = parts.flatMap(p => (p && p.features) || []);
         if (feats.length) setPipeNgGeo({ type: 'FeatureCollection', features: feats });
       }).catch(()=>{});
-    Promise.all([1,2].map(i => fetch(`${BASE}data/pipelines_subsea_og_p${i}.geojson`).then(r=>r.ok?r.json():null)))
+    Promise.all([1,2,3].map(i => fetch(`${BASE}data/pipelines_subsea_og_p${i}.geojson`).then(r=>r.ok?r.json():null)))
       .then(parts => {
         const feats = parts.flatMap(p => (p && p.features) || []);
         if (feats.length) setPipeSubseaGeo({ type: 'FeatureCollection', features: feats });
