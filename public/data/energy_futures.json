@@ -1,0 +1,56 @@
+{
+  "updated": "2026-08-14T01:05:04.094162+00:00",
+  "source": "Yahoo Finance chart API (NYMEX futures symbols)",
+  "rows": [
+    {
+      "id": "fut-CL=F",
+      "name": "WTI crude fut",
+      "kind": "crude",
+      "fullName": "Crude Oil Sep 26 \u00b7 NYM",
+      "seriesKey": "fut:CL=F",
+      "value": "81.12",
+      "unit": "$/bbl",
+      "period": "2026-08-14T00:55"
+    },
+    {
+      "id": "fut-BZ=F",
+      "name": "Brent fut",
+      "kind": "crude",
+      "fullName": "Brent Crude Oil Last Day Financ \u00b7 NYM",
+      "seriesKey": "fut:BZ=F",
+      "value": "86.92",
+      "unit": "$/bbl",
+      "period": "2026-08-14T00:52"
+    },
+    {
+      "id": "fut-NG=F",
+      "name": "Henry Hub fut",
+      "kind": "gas",
+      "fullName": "Natural Gas Sep 26 \u00b7 NYM",
+      "seriesKey": "fut:NG=F",
+      "value": "2.740",
+      "unit": "$/MMBtu",
+      "period": "2026-08-14T00:52"
+    },
+    {
+      "id": "fut-RB=F",
+      "name": "RBOB gas fut",
+      "kind": "gasoline",
+      "fullName": "RBOB Gasoline Sep 26 \u00b7 NYM",
+      "seriesKey": "fut:RB=F",
+      "value": "2.853",
+      "unit": "$/gal",
+      "period": "2026-08-14T00:53"
+    },
+    {
+      "id": "fut-HO=F",
+      "name": "Heating oil fut",
+      "kind": "heat",
+      "fullName": "Heating Oil Sep 26 \u00b7 NYM",
+      "seriesKey": "fut:HO=F",
+      "value": "4.115",
+      "unit": "$/gal",
+      "period": "2026-08-14T00:53"
+    }
+  ]
+}

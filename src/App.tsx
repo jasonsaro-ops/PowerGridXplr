@@ -375,6 +375,59 @@ const PET_META: Record<string, { name: string; kind: PriceRow['kind']; full: str
   EER_EPJK_PF4_RGC_DPG: { name: 'Jet fuel', kind: 'jet', full: 'US Gulf Coast kerosene-type jet fuel' },
 };
 
+
+async function fetchYahooFutures(): Promise<PriceRow[]> {
+  // Prefer same-origin snapshot (avoids browser CORS on Yahoo); then try live Yahoo.
+  try {
+    const snap = await fetch(`${BASE}data/energy_futures.json`);
+    if (snap.ok) {
+      const j = await snap.json();
+      if (Array.isArray(j.rows) && j.rows.length) {
+        return j.rows as PriceRow[];
+      }
+    }
+  } catch { /* fall through */ }
+
+  const symbols: Array<{ sym: string; name: string; kind: PriceRow['kind']; unit: string }> = [
+    { sym: 'CL=F', name: 'WTI crude fut', kind: 'crude', unit: '$/bbl' },
+    { sym: 'BZ=F', name: 'Brent fut', kind: 'crude', unit: '$/bbl' },
+    { sym: 'NG=F', name: 'Henry Hub fut', kind: 'gas', unit: '$/MMBtu' },
+    { sym: 'RB=F', name: 'RBOB gas fut', kind: 'gasoline', unit: '$/gal' },
+    { sym: 'HO=F', name: 'Heating oil fut', kind: 'heat', unit: '$/gal' },
+  ];
+  const rows: PriceRow[] = [];
+  await Promise.all(
+    symbols.map(async ({ sym, name, kind, unit }) => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=5d`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const json = await res.json();
+        const meta = json?.chart?.result?.[0]?.meta;
+        if (!meta || meta.regularMarketPrice == null) return;
+        const px = Number(meta.regularMarketPrice);
+        rows.push({
+          id: `fut-${sym}`,
+          name,
+          kind,
+          fullName: `${meta.shortName || name} · ${meta.exchangeName || 'NYMEX/futures'}`,
+          seriesKey: `fut:${sym}`,
+          value: px.toFixed(unit.includes('bbl') ? 2 : 3),
+          unit,
+          period: meta.regularMarketTime
+            ? new Date(meta.regularMarketTime * 1000).toISOString().slice(0, 16)
+            : 'live',
+        });
+      } catch {
+        /* ignore */
+      }
+    })
+  );
+  const order = ['CL=F', 'BZ=F', 'NG=F', 'RB=F', 'HO=F'];
+  rows.sort((a, b) => order.indexOf(a.id.replace('fut-', '')) - order.indexOf(b.id.replace('fut-', '')));
+  return rows;
+}
+
 async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
   if (!EIA_KEY) return null;
   try {
@@ -410,8 +463,15 @@ async function fetchPetroleumSpot(series: string): Promise<PriceRow | null> {
 }
 
 async function fetchEnergyPrices(): Promise<PriceRow[]> {
-  if (!EIA_KEY) return [];
   const rows: PriceRow[] = [];
+
+  // Near-real-time NYMEX-style futures via Yahoo Finance (market data)
+  try {
+    const fut = await fetchYahooFutures();
+    rows.push(...fut);
+  } catch { /* ignore */ }
+
+  if (!EIA_KEY) return rows;
 
   // Retail electricity by sector (monthly)
   try {
@@ -589,6 +649,26 @@ async function fetchPriceHistory(seriesKey: string): Promise<{ period: string; v
   if (!EIA_KEY || !seriesKey) return [];
   try {
     const [kind, code] = seriesKey.split(':');
+    if (kind === 'fut') {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(code)}?interval=1d&range=3mo`;
+        const res = await fetch(url);
+        if (!res.ok) return [];
+        const json = await res.json();
+        const r0 = json?.chart?.result?.[0];
+        const ts: number[] = r0?.timestamp || [];
+        const closes: Array<number | null> = r0?.indicators?.quote?.[0]?.close || [];
+        const out: { period: string; value: number }[] = [];
+        for (let i = ts.length - 1; i >= 0; i--) {
+          const c = closes[i];
+          if (c == null) continue;
+          out.push({ period: new Date(ts[i] * 1000).toISOString().slice(0, 10), value: c });
+        }
+        return out;
+      } catch {
+        return [];
+      }
+    }
     if (kind === 'pet') {
       const url = new URL('https://api.eia.gov/v2/petroleum/pri/spt/data/');
       url.searchParams.set('api_key', EIA_KEY);
@@ -2091,7 +2171,7 @@ export default function App() {
           <div className="sidebar-section">
             <h3>Energy prices (EIA)</h3>
             <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 8 }}>
-              Auto-refresh 5 min · crude/products daily · retail monthly
+              Futures ~live (Yahoo/NYMEX) · EIA retail monthly · refresh 5 min
               {pricesUpdated ? ` · ${pricesUpdated.toLocaleTimeString()}` : ''}
             </div>
             <button
