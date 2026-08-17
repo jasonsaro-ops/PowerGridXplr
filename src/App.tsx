@@ -909,7 +909,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true, gasFl: true });
   const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
     '220-287': true,
     '345': true,
@@ -946,6 +946,7 @@ export default function App() {
   const [pipeSubseaGeo, setPipeSubseaGeo] = useState<FeatureCollection | null>(null);
   const [compressorsGeo, setCompressorsGeo] = useState<FeatureCollection | null>(null);
   const [terminalsGeo, setTerminalsGeo] = useState<FeatureCollection | null>(null);
+  const [gasFlGeo, setGasFlGeo] = useState<FeatureCollection | null>(null);
   const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast_p1: true, southeast_p2: true, midwest_p1: true, midwest_p2: true, southcentral: true, west_p1: true, west_p2: true, alaska: true, hawaii: true });
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
@@ -1131,6 +1132,7 @@ export default function App() {
     fetch(`${BASE}data/pipelines_hgl.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setPipeHglGeo(g)).catch(()=>{});
     fetch(`${BASE}data/ng_compressors.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setCompressorsGeo(g)).catch(()=>{});
     fetch(`${BASE}data/og_terminals.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setTerminalsGeo(g)).catch(()=>{});
+    fetch(`${BASE}data/pipelines_gas_fl.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setGasFlGeo(g)).catch(()=>{});
     // multi-part pipelines
     Promise.all([1,2,3,4].map(i => fetch(`${BASE}data/pipelines_natgas_p${i}.geojson`).then(r=>r.ok?r.json():null)))
       .then(parts => {
@@ -1322,7 +1324,7 @@ export default function App() {
       'ow-ix-circle',
       'subsea-cables-hit',
       'hvdc-hit',
-      'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'pipe-subsea-hit',
+      'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-fl-hit', 'pipe-subsea-hit',
       'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle',
     ];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
@@ -1344,7 +1346,7 @@ export default function App() {
         f.layer?.id === 'ow-ix-circle' ||
         f.layer?.id === 'subsea-cables-hit' ||
         f.layer?.id === 'hvdc-hit' ||
-        ['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','pipe-subsea-hit','og-platforms-circle','og-wells-circle','ng-comp-circle','og-term-circle'].includes(f.layer?.id || '')
+        ['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','gas-fl-hit','pipe-subsea-hit','og-platforms-circle','og-wells-circle','ng-comp-circle','og-term-circle'].includes(f.layer?.id || '')
     );
     if (!feat) {
       setPlantPopup(null);
@@ -1385,14 +1387,14 @@ export default function App() {
       setPlantPopup({ lon: e.lngLat.lng, lat: e.lngLat.lat, kind: 'cable', cable: props });
       return;
     }
-    if (['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','pipe-subsea-hit'].includes(feat.layer?.id || '')) {
+    if (['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','gas-fl-hit','pipe-subsea-hit'].includes(feat.layer?.id || '')) {
       setPlantPopup({ lon: e.lngLat.lng, lat: e.lngLat.lat, kind: 'cable', cable: {
         name: props.Operator || props.operator || props.Opername || props.Pipename || props.name || 'Pipeline',
-        link_type: props.commodity || props.TYPEPIPE || props.typepipe || 'pipeline',
+        link_type: props.commodity || props.TYPEPIPE || props.typepipe || props.dataset || 'pipeline',
         operator: props.Operator || props.operator || props.Opername || '',
         status: props.Status || props.status || '',
-        notes: [props.Pipename, props.pipename, props.TYPEPIPE].filter(Boolean).join(' · '),
-        source: props.source || 'EIA/HIFLD/BOEM',
+        notes: [props.Pipename, props.pipename, props.TYPEPIPE, props.layer_note, props.substance, props.state].filter(Boolean).join(' · '),
+        source: props.source || props.dataset || 'EIA/OSM/BOEM',
         kv: props.Diameter || props.diameter || '',
       }});
       return;
@@ -1803,6 +1805,14 @@ export default function App() {
                 </span>
               </label>
               <label className="layer-item">
+                <input type="checkbox" checked={layers.gasFl} onChange={() => setLayers((p) => ({ ...p, gasFl: !p.gasFl }))} />
+                <span className="layer-swatch" style={{ background: '#fdba74' }} />
+                FL gas lines (pilot)
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {gasFlGeo ? gasFlGeo.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
                 <input type="checkbox" checked={layers.compressors} onChange={() => setLayers((p) => ({ ...p, compressors: !p.compressors }))} />
                 <span className="layer-swatch" style={{ background: '#fb923c' }} />
                 NG compressor stations
@@ -2072,7 +2082,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-fl-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -2319,6 +2329,16 @@ export default function App() {
               <Source id="pipe-hgl" type="geojson" data={pipeHglGeo}>
                 <Layer id="pipe-hgl-line" type="line" paint={{ 'line-color': '#a8a29e', 'line-width': 1.5, 'line-opacity': 0.7 }} />
                 <Layer id="pipe-hgl-hit" type="line" paint={{ 'line-color': '#a8a29e', 'line-width': 8, 'line-opacity': 0 }} />
+              </Source>
+            )}
+            {layers.gasFl && gasFlGeo && (
+              <Source id="gas-fl-src" type="geojson" data={gasFlGeo}>
+                <Layer id="gas-fl-line" type="line" paint={{
+                  'line-color': '#fdba74',
+                  'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.2, 9, 2.5, 12, 4],
+                  'line-opacity': 0.85,
+                }} />
+                <Layer id="gas-fl-hit" type="line" paint={{ 'line-color': '#fdba74', 'line-width': 10, 'line-opacity': 0 }} />
               </Source>
             )}
             {layers.pipeSubsea && pipeSubseaGeo && (
