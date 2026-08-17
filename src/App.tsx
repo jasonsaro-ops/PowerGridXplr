@@ -925,7 +925,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true, solarLarge: true });
   const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
     '220-287': true,
     '345': true,
@@ -967,6 +967,7 @@ export default function App() {
     Object.fromEntries(GAS_LINE_STATES.map((s) => [s, false]))
   );
   const [gasMenuOpen, setGasMenuOpen] = useState(false);
+  const [solarLargeGeo, setSolarLargeGeo] = useState<FeatureCollection | null>(null);
   const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast_p1: true, southeast_p2: true, midwest_p1: true, midwest_p2: true, southcentral: true, west_p1: true, west_p2: true, alaska: true, hawaii: true });
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
@@ -1152,6 +1153,7 @@ export default function App() {
     fetch(`${BASE}data/pipelines_hgl.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setPipeHglGeo(g)).catch(()=>{});
     fetch(`${BASE}data/ng_compressors.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setCompressorsGeo(g)).catch(()=>{});
     fetch(`${BASE}data/og_terminals.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setTerminalsGeo(g)).catch(()=>{});
+    fetch(`${BASE}data/solar_uspvdb.geojson`).then(r=>r.ok?r.json():null).then(g=>g&&setSolarLargeGeo(g)).catch(()=>{});
     Promise.all(GAS_LINE_FILES.map((f) => fetch(`${BASE}data/${f}`).then((r) => (r.ok ? r.json() : null))))
       .then((parts) => {
         const feats = parts.flatMap((p) => (p && p.features) || []);
@@ -1344,7 +1346,7 @@ export default function App() {
       'lines-hit',
       'ev-tesla-circle',
       'ev-other-circle',
-      'battery-circle',
+      'battery-circle', 'solar-uspvdb-circle',
       'ow-turbines-circle',
       'ow-ix-circle',
       'subsea-cables-hit',
@@ -1367,6 +1369,7 @@ export default function App() {
         f.layer?.id === 'ev-tesla-circle' ||
         f.layer?.id === 'ev-other-circle' ||
         f.layer?.id === 'battery-circle' ||
+        f.layer?.id === 'solar-uspvdb-circle' ||
         f.layer?.id === 'ow-turbines-circle' ||
         f.layer?.id === 'ow-ix-circle' ||
         f.layer?.id === 'subsea-cables-hit' ||
@@ -1392,6 +1395,20 @@ export default function App() {
         ? (feat.geometry.coordinates as [number, number])
         : [e.lngLat.lng, e.lngLat.lat];
       setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'ev', ev: props });
+      return;
+    }
+    if (feat.layer?.id === 'solar-uspvdb-circle') {
+      const coords = feat.geometry.type === 'Point' ? (feat.geometry.coordinates as [number, number]) : [e.lngLat.lng, e.lngLat.lat];
+      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'battery', battery: {
+        name: props.name || 'Solar facility',
+        mw: props.mw_ac ?? props.mw_dc,
+        fuel: [props.tech, props.type, props.axis].filter(Boolean).join(' · ') || 'solar PV',
+        utility: '',
+        city: props.county || '',
+        county: props.county || '',
+        state: props.state || '',
+        source: props.source || 'USPVDB',
+      }});
       return;
     }
     if (feat.layer?.id === 'battery-circle') {
@@ -1749,6 +1766,14 @@ export default function App() {
                 </span>
               </label>
               <label className="layer-item">
+                <input type="checkbox" checked={layers.solarLarge} onChange={() => setLayers((p) => ({ ...p, solarLarge: !p.solarLarge }))} />
+                <span className="layer-swatch" style={{ background: '#facc15' }} />
+                Large-scale solar (≥1 MW)
+                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                  {solarLargeGeo ? solarLargeGeo.features.length.toLocaleString() : '…'}
+                </span>
+              </label>
+              <label className="layer-item">
                 <input type="checkbox" checked={layers.offshoreWind} onChange={() => setLayers((p) => ({ ...p, offshoreWind: !p.offshoreWind }))} />
                 <span className="layer-swatch" style={{ background: '#38bdf8' }} />
                 Offshore wind turbines
@@ -2101,6 +2126,7 @@ export default function App() {
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#e11d48' }} />Tesla SC</div>
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#22c55e' }} />Other EV</div>
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#a3e635' }} />Battery BESS</div>
+              <div className="legend-item"><span className="legend-swatch" style={{ background: '#facc15' }} />Large solar</div>
               <div className="legend-item"><span className="legend-swatch" style={{ background: '#38bdf8' }} />Offshore wind</div>
               <div className="legend-item"><span className="legend-line" style={{ background: '#c084fc' }} />Subsea cable</div>
               <div className="legend-item"><span className="legend-line" style={{ background: '#f472b6' }} />HVDC intertie</div>
@@ -2130,7 +2156,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-states-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'solar-uspvdb-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-states-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'ng-comp-circle', 'og-term-circle']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -2331,6 +2357,20 @@ export default function App() {
                   'circle-opacity': 0.85,
                   'circle-stroke-width': 1,
                   'circle-stroke-color': '#365314',
+                }} />
+              </Source>
+            )}
+            {layers.solarLarge && solarLargeGeo && (
+              <Source id="solar-uspvdb-src" type="geojson" data={solarLargeGeo}>
+                <Layer id="solar-uspvdb-circle" type="circle" paint={{
+                  'circle-radius': [
+                    'interpolate', ['linear'], ['coalesce', ['get', 'mw_ac'], 5],
+                    1, 3, 50, 6, 200, 10, 500, 14
+                  ],
+                  'circle-color': '#facc15',
+                  'circle-opacity': 0.8,
+                  'circle-stroke-width': 0.6,
+                  'circle-stroke-color': '#854d0e',
                 }} />
               </Source>
             )}
