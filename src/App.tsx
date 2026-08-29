@@ -2626,8 +2626,11 @@ export default function App() {
             {layers.coalMines && coalMinesGeo && (
               <Source id="coal-mines-src" type="geojson" data={coalMinesGeo}>
                 <Layer id="coal-mines-circle" type="circle" minzoom={4} paint={{
-                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 4, 8, 6, 12, 9], ['linear'], ['zoom'], 4, 2.5, 8, 5, 12, 8],
-                  'circle-color': '#78716c', 'circle-opacity': 0.85, 'circle-stroke-width': 0.5, 'circle-stroke-color': '#1c1917',
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 4, 8, 6, 12, 9],
+                  'circle-color': '#78716c',
+                  'circle-opacity': 0.85,
+                  'circle-stroke-width': 0.5,
+                  'circle-stroke-color': '#1c1917',
                 }} />
               </Source>
             )}
