@@ -1443,7 +1443,7 @@ export default function App() {
         f.layer?.id === 'ow-ix-circle' ||
         f.layer?.id === 'subsea-cables-hit' ||
         f.layer?.id === 'hvdc-hit' ||
-        ['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','gas-states-hit','pipe-subsea-hit','og-platforms-circle','og-wells-circle','ng-comp-circle','og-term-circle'].includes(f.layer?.id || '')
+        ['pipe-ng-hit','pipe-crude-hit','pipe-hgl-hit','gas-states-hit','pipe-subsea-hit','og-platforms-circle','og-wells-circle','ng-comp-circle','og-term-circle','wells-states-circle','coal-mines-circle'].includes(f.layer?.id || '')
     );
     if (!feat) {
       setPlantPopup(null);
@@ -2626,7 +2626,7 @@ export default function App() {
             {layers.coalMines && coalMinesGeo && (
               <Source id="coal-mines-src" type="geojson" data={coalMinesGeo}>
                 <Layer id="coal-mines-circle" type="circle" minzoom={4} paint={{
-                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 2.5, 8, 5, 12, 8],
+                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 4, 8, 6, 12, 9], ['linear'], ['zoom'], 4, 2.5, 8, 5, 12, 8],
                   'circle-color': '#78716c', 'circle-opacity': 0.85, 'circle-stroke-width': 0.5, 'circle-stroke-color': '#1c1917',
                 }} />
               </Source>
@@ -2636,18 +2636,18 @@ export default function App() {
                 <Layer
                   id="wells-states-circle"
                   type="circle"
-                  minzoom={5}
+                  minzoom={3}
                   filter={['in', ['get', 'state'], ['literal', WELL_LINE_STATES.filter((s) => wellStateOn[s])]]}
                   paint={{
-                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 1.5, 9, 3, 12, 5],
+                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 3, 7, 5, 10, 7, 13, 9],
                     'circle-color': [
                       'case',
                       ['==', ['get', 'unconventional'], 'Y'], '#dc2626',
                       '#60a5fa'
                     ],
-                    'circle-opacity': 0.75,
-                    'circle-stroke-width': 0.3,
-                    'circle-stroke-color': '#1e3a5f',
+                    'circle-opacity': 0.85,
+                    'circle-stroke-width': 0.8,
+                    'circle-stroke-color': '#0f172a',
                   }}
                 />
               </Source>
