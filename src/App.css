@@ -940,3 +940,15 @@ a {
   max-height: 160px; overflow-y: auto;
 }
 .layer-item.compact { font-size: 0.7rem; margin: 0; gap: 0.25rem; }
+
+.plant-popup-subtitle {
+  margin-top: 0.55rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent, #38bdf8);
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  padding-top: 0.4rem;
+}

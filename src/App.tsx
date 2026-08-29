@@ -161,7 +161,7 @@ interface LineProps {
 interface PopupState {
   lon: number;
   lat: number;
-  kind: 'plant' | 'substation' | 'line' | 'ev' | 'battery' | 'offshore' | 'cable' | 'well';
+  kind: 'plant' | 'substation' | 'line' | 'ev' | 'battery' | 'offshore' | 'cable' | 'well' | 'coal';
   plant?: PlantProps;
   substation?: SubstationProps;
   line?: LineProps;
@@ -181,7 +181,25 @@ interface PopupState {
     spud?: string;
     unconventional?: string;
     source?: string;
+    ff_has?: string;
+    ff_operator?: string;
+    ff_job_start?: string;
+    ff_job_end?: string;
+    ff_water_gal?: string;
+    ff_tvd?: string;
+    ff_county?: string;
     meta?: Record<string, unknown>;
+  };
+  coal?: {
+    name?: string;
+    operator?: string;
+    status?: string;
+    type?: string;
+    state?: string;
+    county?: string;
+    msha_id?: string;
+    production?: string;
+    source?: string;
   };
 }
 
@@ -1500,16 +1518,23 @@ export default function App() {
         kind: 'well',
         well: {
           name: String(props.name || props.well_name || 'Oil/gas well'),
-          operator: String(props.operator || ''),
+          operator: String(props.operator || props.Operator || ''),
           status: String(props.status || ''),
           type: String(props.type || (props.unconventional === 'Y' ? 'Unconventional' : '') || 'Well'),
           api: String(props.api || props.permit || ''),
           state: String(props.state || ''),
-          county: String(props.county || ''),
+          county: String(props.county || props.County || props.ff_county || ''),
           config: String(props.config || ''),
           spud: String(props.spud || ''),
           unconventional: String(props.unconventional || ''),
           source: String(props.source || 'State public GIS'),
+          ff_has: String(props.ff_has || ''),
+          ff_operator: String(props.ff_operator || ''),
+          ff_job_start: String(props.ff_job_start || ''),
+          ff_job_end: String(props.ff_job_end || ''),
+          ff_water_gal: String(props.ff_water_gal || ''),
+          ff_tvd: String(props.ff_tvd || ''),
+          ff_county: String(props.ff_county || ''),
           meta: props as Record<string, unknown>,
         },
       });
@@ -1517,26 +1542,45 @@ export default function App() {
     }
     if (feat.layer?.id === 'coal-mines-circle') {
       const coords = feat.geometry.type === 'Point' ? (feat.geometry.coordinates as [number, number]) : [e.lngLat.lng, e.lngLat.lat];
-      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'cable', cable: {
-        name: String(props.name || props.mine_name || props.site_name || 'Coal mine'),
-        link_type: String(props.type || 'Coal mine'),
-        operator: String(props.operator || props.company || ''),
-        status: String(props.status || ''),
-        notes: [props.state, props.county, props.msha_id].filter(Boolean).join(' · '),
-        source: String(props.source || 'EIA/MSHA/PA DEP'),
-      }});
+      setPlantPopup({
+        lon: coords[0],
+        lat: coords[1],
+        kind: 'coal',
+        coal: {
+          name: String(props.name || props.mine_name || props.site_name || 'Coal mine'),
+          operator: String(props.operator || props.company || props.COMPANY || ''),
+          status: String(props.status || props.STATUS || ''),
+          type: String(props.type || props.mine_type || props.TYPE || 'Coal mine'),
+          state: String(props.state || props.STATE || ''),
+          county: String(props.county || props.COUNTY || ''),
+          msha_id: String(props.msha_id || props.MSHA_ID || props.msha || ''),
+          production: String(props.production || props.PROD_SHORT_TONS || props.tons || ''),
+          source: String(props.source || 'EIA/MSHA/PA DEP'),
+        },
+      });
       return;
     }
     if (feat.layer?.id === 'og-wells-circle') {
       const coords = feat.geometry.type === 'Point' ? (feat.geometry.coordinates as [number, number]) : [e.lngLat.lng, e.lngLat.lat];
-      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'cable', cable: {
-        name: String(props.well_name || props.name || props.api_wellnumber || 'OCS well'),
-        link_type: String(props.well_type_code || props.type || 'Well'),
-        operator: String(props.operator_name || props.operator || ''),
-        status: String(props.status || ''),
-        notes: [props.lease_number, props.area_code, props.block_number, props.water_depth != null ? `depth ${props.water_depth}` : ''].filter(Boolean).join(' · '),
-        source: String(props.source || 'BOEM/BSEE'),
-      }});
+      setPlantPopup({
+        lon: coords[0],
+        lat: coords[1],
+        kind: 'well',
+        well: {
+          name: String(props.well_name || props.name || props.api_wellnumber || 'OCS well'),
+          operator: String(props.operator_name || props.operator || ''),
+          status: String(props.status || ''),
+          type: String(props.well_type_code || props.type || 'OCS well'),
+          api: String(props.api_wellnumber || props.api || ''),
+          state: 'OCS',
+          county: String(props.area_code || ''),
+          config: String(props.block_number || ''),
+          spud: String(props.spud_date || ''),
+          source: String(props.source || 'BOEM/BSEE'),
+          ff_has: String(props.ff_has || ''),
+          meta: props as Record<string, unknown>,
+        },
+      });
       return;
     }
     if (feat.layer?.id === 'og-platforms-circle') {
@@ -2661,203 +2705,113 @@ export default function App() {
                 anchor="bottom"
                 onClose={() => setPlantPopup(null)}
                 closeOnClick={false}
-                maxWidth="320px"
+                maxWidth="340px"
               >
-                {plantPopup.kind === 'line' && plantPopup.line ? (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">Transmission line</div>
-                    <div className="plant-popup-row">
-                      <span>Voltage</span>
-                      <strong>
-                        {plantPopup.line.VOLTAGE != null
-                          ? `${Number(plantPopup.line.VOLTAGE)} kV`
-                          : '—'}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Class</span>
-                      <strong>{plantPopup.line.VOLT_CLASS || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Type</span>
-                      <strong>{plantPopup.line.TYPE || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Status</span>
-                      <strong>{plantPopup.line.STATUS || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Owner</span>
-                      <strong>{plantPopup.line.OWNER || '—'}</strong>
-                    </div>
-                  </div>
-                ) : plantPopup.kind === 'ev' && plantPopup.ev ? (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">{String(plantPopup.ev.name || 'EV station')}</div>
-                    <div className="plant-popup-row"><span>Network</span><strong>{String(plantPopup.ev.network || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.ev.status || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Stalls / spots</span><strong>{plantPopup.ev.stalls != null ? String(plantPopup.ev.stalls) : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>kW / stall</span><strong>{plantPopup.ev.kw_per_stall != null ? `${plantPopup.ev.kw_per_stall} kW` : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Site MW capacity</span><strong>{plantPopup.ev.mw_capacity != null ? `${plantPopup.ev.mw_capacity} MW` : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Live load</span><strong>Not public</strong></div>
-                    <div className="plant-popup-row"><span>Access</span><strong>{String(plantPopup.ev.access || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.ev.operator || plantPopup.ev.brand || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Location</span><strong>{[plantPopup.ev.address, plantPopup.ev.city, plantPopup.ev.state].filter(Boolean).join(', ') || '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.ev.source || 'OSM')}</strong></div>
-                  </div>
-                ) : plantPopup.kind === 'battery' && plantPopup.battery ? (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">{String(plantPopup.battery.name || 'Battery storage')}</div>
-                    <div className="plant-popup-row"><span>Capacity</span><strong>{plantPopup.battery.mw != null ? `${plantPopup.battery.mw} MW` : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.battery.fuel || 'batteries')}</strong></div>
-                    <div className="plant-popup-row"><span>Utility</span><strong>{String(plantPopup.battery.utility || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Location</span><strong>{[plantPopup.battery.city, plantPopup.battery.county, plantPopup.battery.state].filter(Boolean).join(', ') || '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.battery.source || 'EIA/HIFLD')}</strong></div>
-                  </div>
-                ) : plantPopup.kind === 'offshore' && plantPopup.offshore ? (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">{String(plantPopup.offshore.name || plantPopup.offshore.project || 'Offshore facility')}</div>
-                    <div className="plant-popup-row"><span>Project</span><strong>{String(plantPopup.offshore.project || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Developer</span><strong>{String(plantPopup.offshore.developer || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Lease</span><strong>{String(plantPopup.offshore.lease || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Max MW</span><strong>{plantPopup.offshore.max_mw != null ? String(plantPopup.offshore.max_mw) : (plantPopup.offshore.mw != null ? String(plantPopup.offshore.mw) : '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.offshore.status || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Depth (m)</span><strong>{plantPopup.offshore.depth_m != null ? String(plantPopup.offshore.depth_m) : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.offshore.source || 'BOEM')}</strong></div>
-                  </div>
-                                ) : plantPopup.kind === 'well' && plantPopup.well ? (
-                  <>
-                    <div className="plant-popup-title">{String(plantPopup.well.name || 'Oil/gas well')}</div>
-                    <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.well.state || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>County</span><strong>{String(plantPopup.well.county || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.well.operator || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.well.status || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.well.type || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>API / Permit</span><strong>{String(plantPopup.well.api || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Configuration</span><strong>{String(plantPopup.well.config || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Unconventional</span><strong>{String(plantPopup.well.unconventional || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Spud date</span><strong>{String(plantPopup.well.spud || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.well.source || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Lat / Lon</span><strong>{plantPopup.lat.toFixed(5)}, {plantPopup.lon.toFixed(5)}</strong></div>
-                    {plantPopup.well.meta && Object.keys(plantPopup.well.meta).length > 0 && (
-                      <div className="plant-popup-meta">
-                        <div className="plant-popup-subtitle">All attributes</div>
-                        {Object.entries(plantPopup.well.meta)
-                          .filter(([k, v]) => v != null && v !== '' && !['name','operator','status','type','api','state','county','config','spud','unconventional','source','meta'].includes(k))
-                          .map(([k, v]) => (
-                            <div className="plant-popup-row" key={k}><span>{k}</span><strong>{String(v)}</strong></div>
-                          ))}
-                      </div>
-                    )}
-                  </>
-                
-                ) : plantPopup.kind === 'cable' && plantPopup.cable ? (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">{String(plantPopup.cable.name || 'Cable / intertie')}</div>
-                    <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.cable.link_type || plantPopup.cable.cable_type || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Project</span><strong>{String(plantPopup.cable.project || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.cable.operator || plantPopup.cable.developer || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>From</span><strong>{String(plantPopup.cable.from_end || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>To</span><strong>{String(plantPopup.cable.to_end || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Capacity</span><strong>{plantPopup.cable.mw != null ? `${plantPopup.cable.mw} MW` : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>kV</span><strong>{plantPopup.cable.kv != null ? String(plantPopup.cable.kv) : '—'}</strong></div>
-                    <div className="plant-popup-row"><span>Current</span><strong>{String(plantPopup.cable.current || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Burial (m)</span><strong>{String(plantPopup.cable.burial_m || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.cable.status || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Notes</span><strong>{String(plantPopup.cable.notes || '—')}</strong></div>
-                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.cable.source || 'Public')}</strong></div>
-                  </div>
-                ) : plantPopup.kind === 'substation' && plantPopup.substation ? (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">{plantPopup.substation.NAME || 'Substation'}</div>
-                    <div className="plant-popup-row">
-                      <span>Facility type</span>
-                      <strong>{plantPopup.substation.TYPE || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Status</span>
-                      <strong>{plantPopup.substation.STATUS || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Max voltage</span>
-                      <strong>
-                        {plantPopup.substation.MAX_VOLT != null && plantPopup.substation.MAX_VOLT !== ''
-                          ? `${Number(plantPopup.substation.MAX_VOLT)} kV`
-                          : '—'}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Min voltage</span>
-                      <strong>
-                        {plantPopup.substation.MIN_VOLT != null && plantPopup.substation.MIN_VOLT !== ''
-                          ? `${Number(plantPopup.substation.MIN_VOLT)} kV`
-                          : '—'}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Connected lines</span>
-                      <strong>
-                        {plantPopup.substation.LINES != null && plantPopup.substation.LINES !== ''
-                          ? String(plantPopup.substation.LINES)
-                          : '—'}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>City</span>
-                      <strong>{plantPopup.substation.CITY || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>County</span>
-                      <strong>{plantPopup.substation.COUNTY || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>State</span>
-                      <strong>{plantPopup.substation.STATE || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>ZIP</span>
-                      <strong>{plantPopup.substation.ZIP || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Coordinates</span>
-                      <strong>
-                        {plantPopup.lat.toFixed(5)}, {plantPopup.lon.toFixed(5)}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Data source</span>
-                      <strong>{plantPopup.substation.SOURCE || 'HIFLD-derived / open'}</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="plant-popup">
-                    <div className="plant-popup-title">{plantPopup.plant?.Plant_Name || 'Power plant'}</div>
-                    <div className="plant-popup-row">
-                      <span>Fuel</span>
-                      <strong style={{ textTransform: 'capitalize' }}>{plantPopup.plant?.PrimSource || '—'}</strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Capacity</span>
-                      <strong>
-                        {plantPopup.plant?.Total_MW != null
-                          ? `${Number(plantPopup.plant.Total_MW).toLocaleString()} MW`
-                          : '—'}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Location</span>
-                      <strong>
-                        {[plantPopup.plant?.City, plantPopup.plant?.County, plantPopup.plant?.State]
-                          .filter(Boolean)
-                          .join(', ') || '—'}
-                      </strong>
-                    </div>
-                    <div className="plant-popup-row">
-                      <span>Utility</span>
-                      <strong>{plantPopup.plant?.Utility_Na || '—'}</strong>
-                    </div>
-                  </div>
-                )}
+                <div className="plant-popup">
+                  {plantPopup.kind === 'line' && plantPopup.line ? (
+                    <>
+                      <div className="plant-popup-title">Transmission line</div>
+                      <div className="plant-popup-row"><span>Voltage</span><strong>{plantPopup.line.VOLTAGE != null ? `${Number(plantPopup.line.VOLTAGE)} kV` : '—'}</strong></div>
+                      <div className="plant-popup-row"><span>Class</span><strong>{plantPopup.line.VOLT_CLASS || '—'}</strong></div>
+                      <div className="plant-popup-row"><span>Type</span><strong>{plantPopup.line.TYPE || '—'}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{plantPopup.line.STATUS || '—'}</strong></div>
+                      <div className="plant-popup-row"><span>Owner</span><strong>{plantPopup.line.OWNER || '—'}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'ev' && plantPopup.ev ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.ev.name || 'EV station')}</div>
+                      <div className="plant-popup-row"><span>Network</span><strong>{String(plantPopup.ev.network || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.ev.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Access</span><strong>{String(plantPopup.ev.access || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Connectors</span><strong>{String(plantPopup.ev.connectors || plantPopup.ev.ports || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>kW</span><strong>{String(plantPopup.ev.kw || plantPopup.ev.power_kw || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.ev.source || 'OpenChargeMap / public')}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'battery' && plantPopup.battery ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.battery.name || 'Battery storage')}</div>
+                      <div className="plant-popup-row"><span>Capacity</span><strong>{String(plantPopup.battery.mw || plantPopup.battery.capacity_mw || '—')} MW</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.battery.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Owner</span><strong>{String(plantPopup.battery.owner || plantPopup.battery.operator || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.battery.source || 'EIA/HIFLD')}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'offshore' && plantPopup.offshore ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.offshore.name || plantPopup.offshore.project || 'Offshore facility')}</div>
+                      <div className="plant-popup-row"><span>Project</span><strong>{String(plantPopup.offshore.project || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Developer</span><strong>{String(plantPopup.offshore.developer || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Lease</span><strong>{String(plantPopup.offshore.lease || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Max MW</span><strong>{String(plantPopup.offshore.max_mw ?? plantPopup.offshore.mw ?? '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.offshore.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.offshore.source || 'BOEM')}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'well' && plantPopup.well ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.well.name || 'Oil/gas well')}</div>
+                      <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.well.operator || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>County</span><strong>{String(plantPopup.well.county || plantPopup.well.ff_county || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.well.state || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.well.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.well.type || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>API / Permit</span><strong>{String(plantPopup.well.api || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Configuration</span><strong>{String(plantPopup.well.config || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Unconventional</span><strong>{String(plantPopup.well.unconventional || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Spud date</span><strong>{String(plantPopup.well.spud || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Lat / Lon</span><strong>{plantPopup.lat.toFixed(5)}, {plantPopup.lon.toFixed(5)}</strong></div>
+                      <div className="plant-popup-subtitle">FracFocus disclosure</div>
+                      <div className="plant-popup-row"><span>Has disclosure</span><strong>{String(plantPopup.well.ff_has || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>FF operator</span><strong>{String(plantPopup.well.ff_operator || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Job start</span><strong>{String(plantPopup.well.ff_job_start || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Job end</span><strong>{String(plantPopup.well.ff_job_end || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Water volume (gal)</span><strong>{String(plantPopup.well.ff_water_gal || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>TVD (ft)</span><strong>{String(plantPopup.well.ff_tvd || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>FF county</span><strong>{String(plantPopup.well.ff_county || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.well.source || '—')}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'coal' && plantPopup.coal ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.coal.name || 'Coal mine')}</div>
+                      <div className="plant-popup-row"><span>Operator / company</span><strong>{String(plantPopup.coal.operator || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.coal.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.coal.type || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.coal.state || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>County</span><strong>{String(plantPopup.coal.county || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>MSHA ID</span><strong>{String(plantPopup.coal.msha_id || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Production</span><strong>{String(plantPopup.coal.production || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Lat / Lon</span><strong>{plantPopup.lat.toFixed(5)}, {plantPopup.lon.toFixed(5)}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.coal.source || 'EIA/MSHA/PA DEP')}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'cable' && plantPopup.cable ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.cable.name || 'Cable / line')}</div>
+                      <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.cable.link_type || plantPopup.cable.cable_type || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.cable.operator || plantPopup.cable.developer || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.cable.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Notes</span><strong>{String(plantPopup.cable.notes || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.cable.source || '—')}</strong></div>
+                    </>
+                  ) : plantPopup.kind === 'substation' && plantPopup.substation ? (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.substation.NAME || 'Substation')}</div>
+                      <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.substation.TYPE || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.substation.STATUS || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Max voltage</span><strong>{plantPopup.substation.MAX_VOLT != null && plantPopup.substation.MAX_VOLT !== '' ? `${Number(plantPopup.substation.MAX_VOLT)} kV` : '—'}</strong></div>
+                      <div className="plant-popup-row"><span>City</span><strong>{String(plantPopup.substation.CITY || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>County</span><strong>{String(plantPopup.substation.COUNTY || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.substation.STATE || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.substation.SOURCE || 'HIFLD')}</strong></div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="plant-popup-title">{String(plantPopup.plant?.Plant_Name || plantPopup.plant?.name || 'Power plant')}</div>
+                      <div className="plant-popup-row"><span>Fuel</span><strong>{String(plantPopup.plant?.PrimSource || plantPopup.plant?.fuel || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Capacity (MW)</span><strong>{String(plantPopup.plant?.Install_MW ?? plantPopup.plant?.mw ?? '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.plant?.Status || plantPopup.plant?.status || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Utility</span><strong>{String(plantPopup.plant?.Utility_Na || plantPopup.plant?.operator || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.plant?.State || plantPopup.plant?.state || '—')}</strong></div>
+                    </>
+                  )}
+                </div>
               </Popup>
             )}
           </Map>
