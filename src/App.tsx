@@ -43,6 +43,21 @@ const SUB_REGIONS = [
 ] as const;
 
 
+const WELL_LINE_STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','ID','IL','IN','KS','KY','LA','MD','MI',
+  'MS','MO','MT','NE','NV','NY','NM','ND','OH','OK','OR','PA','SD','TN','TX','UT','VA','WV','WY',
+] as const;
+
+const WELL_LINE_FILES = [
+  'wells_states_pa.geojson',
+  'wells_states_oh.geojson',
+  'wells_states_ne.geojson',
+  'wells_states_se.geojson',
+  'wells_states_mw.geojson',
+  'wells_states_sc.geojson',
+  'wells_states_we.geojson',
+] as const;
+
 const GAS_LINE_STATES = [
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
   'MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC',
@@ -925,7 +940,7 @@ export default function App() {
     alaska: true,
     hawaii: true,
   });
-  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true, solarLarge: true, coalMines: false, wellsPa: false });
+  const [layers, setLayers] = useState({ lines: true, interconnects: true, substations: false, tesla: false, otherEv: false, battery: true, offshoreWind: true, offshoreLeases: false, subseaCables: true, hvdc: true, ogPlatforms: true, ogWells: false, pipeNg: false, pipeCrude: true, pipeHgl: false, pipeSubsea: true, compressors: true, terminals: true, solarLarge: true, coalMines: false });
   const [voltFilters, setVoltFilters] = useState<Record<string, boolean>>({
     '220-287': true,
     '345': true,
@@ -969,7 +984,11 @@ export default function App() {
   const [gasMenuOpen, setGasMenuOpen] = useState(false);
   const [solarLargeGeo, setSolarLargeGeo] = useState<FeatureCollection | null>(null);
   const [coalMinesGeo, setCoalMinesGeo] = useState<FeatureCollection | null>(null);
-  const [wellsPaGeo, setWellsPaGeo] = useState<FeatureCollection | null>(null);
+  const [wellsByStateGeo, setWellsByStateGeo] = useState<FeatureCollection | null>(null);
+  const [wellStateOn, setWellStateOn] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(WELL_LINE_STATES.map((s) => [s, false]))
+  );
+  const [wellMenuOpen, setWellMenuOpen] = useState(false);
   const [subRegionOn, setSubRegionOn] = useState<Record<string, boolean>>({ northeast: true, southeast_p1: true, southeast_p2: true, midwest_p1: true, midwest_p2: true, southcentral: true, west_p1: true, west_p2: true, alaska: true, hawaii: true });
   const [plantPopup, setPlantPopup] = useState<PopupState | null>(null);
   const [searchMsg, setSearchMsg] = useState('');
@@ -1163,11 +1182,12 @@ export default function App() {
       const feats = parts.flatMap(p => (p && p.features) || []);
       if (feats.length) setCoalMinesGeo({ type: 'FeatureCollection', features: feats });
     }).catch(()=>{});
-    Promise.all([1,2,3].map(i => fetch(`${BASE}data/wells_pa_p${i}.geojson`).then(r=>r.ok?r.json():null)))
-      .then(parts => {
-        const feats = parts.flatMap(p => (p && p.features) || []);
-        if (feats.length) setWellsPaGeo({ type: 'FeatureCollection', features: feats });
-      }).catch(()=>{});
+    Promise.all(WELL_LINE_FILES.map((f) => fetch(`${BASE}data/${f}`).then((r) => (r.ok ? r.json() : null))))
+      .then((parts) => {
+        const feats = parts.flatMap((p) => (p && p.features) || []);
+        if (feats.length) setWellsByStateGeo({ type: 'FeatureCollection', features: feats });
+      })
+      .catch(() => {});
     Promise.all(GAS_LINE_FILES.map((f) => fetch(`${BASE}data/${f}`).then((r) => (r.ok ? r.json() : null))))
       .then((parts) => {
         const feats = parts.flatMap((p) => (p && p.features) || []);
@@ -1366,7 +1386,7 @@ export default function App() {
       'subsea-cables-hit',
       'hvdc-hit',
       'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-states-hit', 'pipe-subsea-hit',
-      'og-platforms-circle', 'og-wells-circle', 'coal-mines-circle', 'wells-pa-circle', 'ng-comp-circle', 'og-term-circle',
+      'og-platforms-circle', 'og-wells-circle', 'coal-mines-circle', 'wells-states-circle', 'ng-comp-circle', 'og-term-circle',
     ];
     const feats = e.features?.filter((f) => layersHit.includes(f.layer?.id || ''));
     setCursor(feats && feats.length > 0 ? 'pointer' : 'default');
@@ -1455,15 +1475,15 @@ export default function App() {
       }});
       return;
     }
-    if (feat.layer?.id === 'wells-pa-circle') {
+    if (feat.layer?.id === 'wells-states-circle') {
       const coords = feat.geometry.type === 'Point' ? (feat.geometry.coordinates as [number, number]) : [e.lngLat.lng, e.lngLat.lat];
       setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'cable', cable: {
-        name: String(props.name || props.well_name || 'PA well'),
+        name: String(props.name || props.well_name || 'Oil/gas well'),
         link_type: String(props.unconventional === 'Y' ? 'Unconventional (frac)' : (props.type || 'Well')),
         operator: String(props.operator || ''),
         status: String(props.status || ''),
         notes: [props.county, props.config, props.permit].filter(Boolean).join(' · '),
-        source: String(props.source || 'PA DEP'),
+        source: String(props.source || 'State public GIS'),
       }});
       return;
     }
@@ -1860,14 +1880,38 @@ export default function App() {
                   {coalMinesGeo ? coalMinesGeo.features.length.toLocaleString() : '…'}
                 </span>
               </label>
-              <label className="layer-item">
-                <input type="checkbox" checked={layers.wellsPa} onChange={() => setLayers((p) => ({ ...p, wellsPa: !p.wellsPa }))} />
-                <span className="layer-swatch" style={{ background: '#ef4444' }} />
-                PA oil/gas wells
-                <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                  {wellsPaGeo ? wellsPaGeo.features.length.toLocaleString() : '…'}
-                </span>
-              </label>
+              <div className="layer-group">
+                <button type="button" className="layer-group-toggle" onClick={() => setWellMenuOpen((v) => !v)}>
+                  <span className="layer-swatch" style={{ background: '#ef4444' }} />
+                  Oil/gas wells by state
+                  <span style={{ marginLeft: 'auto', fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                    {wellsByStateGeo ? wellsByStateGeo.features.length.toLocaleString() : '…'} · {Object.values(wellStateOn).filter(Boolean).length} on
+                  </span>
+                  <span style={{ marginLeft: 6 }}>{wellMenuOpen ? '▾' : '▸'}</span>
+                </button>
+                {wellMenuOpen && (
+                  <div className="layer-submenu">
+                    <div className="layer-submenu-actions">
+                      <button type="button" onClick={() => setWellStateOn(Object.fromEntries(WELL_LINE_STATES.map((s) => [s, true])))}>Enable all</button>
+                      <button type="button" onClick={() => setWellStateOn(Object.fromEntries(WELL_LINE_STATES.map((s) => [s, false])))}>Disable all</button>
+                    </div>
+                    <div className="layer-submenu-grid">
+                      {WELL_LINE_STATES.map((st) => (
+                        <label key={st} className="layer-item compact">
+                          <input
+                            type="checkbox"
+                            checked={!!wellStateOn[st]}
+                            onChange={() => setWellStateOn((p) => ({ ...p, [st]: !p[st] }))}
+                          />
+                          {st}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="disclaimer-tiny">Public state samples + PA DEP. Not full ~5M national inventory. USGS ScienceBase is cell-aggregated only. FracFocus = chemical disclosures. Use wells.fractracker.org for full interactive national search.</p>
+                  </div>
+                )}
+              </div>
+
               <label className="layer-item">
                 <input type="checkbox" checked={layers.ogWells} onChange={() => setLayers((p) => ({ ...p, ogWells: !p.ogWells }))} />
                 <span className="layer-swatch" style={{ background: '#ca8a04' }} />
@@ -2210,7 +2254,7 @@ export default function App() {
             initialViewState={{ longitude: -96, latitude: 39, zoom: 3.8 }}
             style={{ width: '100%', height: '100%', cursor }}
             mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
-            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'solar-uspvdb-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-states-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'coal-mines-circle', 'wells-pa-circle', 'ng-comp-circle', 'og-term-circle']}
+            interactiveLayerIds={[...PLANT_REGIONS.map((r) => `plants-circle-${r.id}`), ...SUB_REGIONS.map((r) => `subs-circle-${r.id}`), 'lines-hit', 'ev-tesla-circle', 'ev-other-circle', 'battery-circle', 'solar-uspvdb-circle', 'ow-turbines-circle', 'ow-ix-circle', 'subsea-cables-hit', 'hvdc-hit', 'pipe-ng-hit', 'pipe-crude-hit', 'pipe-hgl-hit', 'gas-states-hit', 'pipe-subsea-hit', 'og-platforms-circle', 'og-wells-circle', 'coal-mines-circle', 'wells-states-circle', 'ng-comp-circle', 'og-term-circle']}
             onClick={onMapClick}
             onMouseMove={onMouseMove}
           >
@@ -2515,19 +2559,25 @@ export default function App() {
                 }} />
               </Source>
             )}
-            {layers.wellsPa && wellsPaGeo && (
-              <Source id="wells-pa-src" type="geojson" data={wellsPaGeo}>
-                <Layer id="wells-pa-circle" type="circle" minzoom={6} paint={{
-                  'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 9, 3, 12, 5],
-                  'circle-color': [
-                    'case',
-                    ['==', ['get', 'unconventional'], 'Y'], '#dc2626',
-                    '#60a5fa'
-                  ],
-                  'circle-opacity': 0.75,
-                  'circle-stroke-width': 0.3,
-                  'circle-stroke-color': '#1e3a5f',
-                }} />
+            {wellsByStateGeo && Object.values(wellStateOn).some(Boolean) && (
+              <Source id="wells-states-src" type="geojson" data={wellsByStateGeo}>
+                <Layer
+                  id="wells-states-circle"
+                  type="circle"
+                  minzoom={5}
+                  filter={['in', ['get', 'state'], ['literal', WELL_LINE_STATES.filter((s) => wellStateOn[s])]]}
+                  paint={{
+                    'circle-radius': ['interpolate', ['linear'], ['zoom'], 5, 1.5, 9, 3, 12, 5],
+                    'circle-color': [
+                      'case',
+                      ['==', ['get', 'unconventional'], 'Y'], '#dc2626',
+                      '#60a5fa'
+                    ],
+                    'circle-opacity': 0.75,
+                    'circle-stroke-width': 0.3,
+                    'circle-stroke-color': '#1e3a5f',
+                  }}
+                />
               </Source>
             )}
             {layers.ogWells && ogWellsGeo && (

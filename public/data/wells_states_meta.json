@@ -1,0 +1,1 @@
+{"states": ["AR", "CA", "NM", "OH", "PA"], "counts": {"AR": 473, "CA": 56, "NM": 10000, "OH": 12000, "PA": 31163}, "note": "Sampled public state GIS + PA DEP. Not full national inventory (~5M). USGS ScienceBase provides cell aggregation only."}
