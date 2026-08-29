@@ -2803,12 +2803,14 @@ export default function App() {
                     </>
                   ) : (
                     <>
-                      <div className="plant-popup-title">{String(plantPopup.plant?.Plant_Name || plantPopup.plant?.name || 'Power plant')}</div>
-                      <div className="plant-popup-row"><span>Fuel</span><strong>{String(plantPopup.plant?.PrimSource || plantPopup.plant?.fuel || '—')}</strong></div>
-                      <div className="plant-popup-row"><span>Capacity (MW)</span><strong>{String(plantPopup.plant?.Install_MW ?? plantPopup.plant?.mw ?? '—')}</strong></div>
-                      <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.plant?.Status || plantPopup.plant?.status || '—')}</strong></div>
-                      <div className="plant-popup-row"><span>Utility</span><strong>{String(plantPopup.plant?.Utility_Na || plantPopup.plant?.operator || '—')}</strong></div>
-                      <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.plant?.State || plantPopup.plant?.state || '—')}</strong></div>
+                      <div className="plant-popup-title">{String(plantPopup.plant?.Plant_Name || 'Power plant')}</div>
+                      <div className="plant-popup-row"><span>Fuel</span><strong>{String(plantPopup.plant?.PrimSource || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Installed MW</span><strong>{String(plantPopup.plant?.Install_MW ?? '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Total MW</span><strong>{String(plantPopup.plant?.Total_MW ?? '—')}</strong></div>
+                      <div className="plant-popup-row"><span>Utility</span><strong>{String(plantPopup.plant?.Utility_Na || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>City</span><strong>{String(plantPopup.plant?.City || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>County</span><strong>{String(plantPopup.plant?.County || '—')}</strong></div>
+                      <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.plant?.State || '—')}</strong></div>
                     </>
                   )}
                 </div>
