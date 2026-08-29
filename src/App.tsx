@@ -49,13 +49,16 @@ const WELL_LINE_STATES = [
 ] as const;
 
 const WELL_LINE_FILES = [
-  'wells_states_pa.geojson',
-  'wells_states_oh.geojson',
-  'wells_states_ne.geojson',
-  'wells_states_se.geojson',
-  'wells_states_mw.geojson',
-  'wells_states_sc.geojson',
-  'wells_states_we.geojson',
+  'wells_states_ne_p1.geojson',
+  'wells_states_ne_p2.geojson',
+  'wells_states_se_p1.geojson',
+  'wells_states_se_p2.geojson',
+  'wells_states_mw_p1.geojson',
+  'wells_states_mw_p2.geojson',
+  'wells_states_sc_p1.geojson',
+  'wells_states_sc_p2.geojson',
+  'wells_states_we_p1.geojson',
+  'wells_states_we_p2.geojson',
 ] as const;
 
 const GAS_LINE_STATES = [
@@ -158,7 +161,7 @@ interface LineProps {
 interface PopupState {
   lon: number;
   lat: number;
-  kind: 'plant' | 'substation' | 'line' | 'ev' | 'battery' | 'offshore' | 'cable';
+  kind: 'plant' | 'substation' | 'line' | 'ev' | 'battery' | 'offshore' | 'cable' | 'well';
   plant?: PlantProps;
   substation?: SubstationProps;
   line?: LineProps;
@@ -166,6 +169,20 @@ interface PopupState {
   battery?: Record<string, unknown>;
   offshore?: Record<string, unknown>;
   cable?: Record<string, unknown>;
+  well?: {
+    name?: string;
+    operator?: string;
+    status?: string;
+    type?: string;
+    api?: string;
+    state?: string;
+    county?: string;
+    config?: string;
+    spud?: string;
+    unconventional?: string;
+    source?: string;
+    meta?: Record<string, unknown>;
+  };
 }
 
 interface NwsAlert {
@@ -1477,14 +1494,25 @@ export default function App() {
     }
     if (feat.layer?.id === 'wells-states-circle') {
       const coords = feat.geometry.type === 'Point' ? (feat.geometry.coordinates as [number, number]) : [e.lngLat.lng, e.lngLat.lat];
-      setPlantPopup({ lon: coords[0], lat: coords[1], kind: 'cable', cable: {
-        name: String(props.name || props.well_name || 'Oil/gas well'),
-        link_type: String(props.unconventional === 'Y' ? 'Unconventional (frac)' : (props.type || 'Well')),
-        operator: String(props.operator || ''),
-        status: String(props.status || ''),
-        notes: [props.county, props.config, props.permit].filter(Boolean).join(' · '),
-        source: String(props.source || 'State public GIS'),
-      }});
+      setPlantPopup({
+        lon: coords[0],
+        lat: coords[1],
+        kind: 'well',
+        well: {
+          name: String(props.name || props.well_name || 'Oil/gas well'),
+          operator: String(props.operator || ''),
+          status: String(props.status || ''),
+          type: String(props.type || (props.unconventional === 'Y' ? 'Unconventional' : '') || 'Well'),
+          api: String(props.api || props.permit || ''),
+          state: String(props.state || ''),
+          county: String(props.county || ''),
+          config: String(props.config || ''),
+          spud: String(props.spud || ''),
+          unconventional: String(props.unconventional || ''),
+          source: String(props.source || 'State public GIS'),
+          meta: props as Record<string, unknown>,
+        },
+      });
       return;
     }
     if (feat.layer?.id === 'coal-mines-circle') {
@@ -1907,7 +1935,7 @@ export default function App() {
                         </label>
                       ))}
                     </div>
-                    <p className="disclaimer-tiny">Public state samples + PA DEP. Not full ~5M national inventory. USGS ScienceBase is cell-aggregated only. FracFocus = chemical disclosures. Use wells.fractracker.org for full interactive national search.</p>
+                    <p className="disclaimer-tiny">~256k sampled wells across 33 states (FracTracker state aggregates + PA DEP). Capped per state for size. Full national ~5M: wells.fractracker.org. USGS ScienceBase = cell density only; FracFocus = chemical disclosures.</p>
                   </div>
                 )}
               </div>
@@ -2697,6 +2725,32 @@ export default function App() {
                     <div className="plant-popup-row"><span>Depth (m)</span><strong>{plantPopup.offshore.depth_m != null ? String(plantPopup.offshore.depth_m) : '—'}</strong></div>
                     <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.offshore.source || 'BOEM')}</strong></div>
                   </div>
+                                ) : plantPopup.kind === 'well' && plantPopup.well ? (
+                  <>
+                    <div className="plant-popup-title">{String(plantPopup.well.name || 'Oil/gas well')}</div>
+                    <div className="plant-popup-row"><span>State</span><strong>{String(plantPopup.well.state || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>County</span><strong>{String(plantPopup.well.county || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Operator</span><strong>{String(plantPopup.well.operator || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Status</span><strong>{String(plantPopup.well.status || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Type</span><strong>{String(plantPopup.well.type || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>API / Permit</span><strong>{String(plantPopup.well.api || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Configuration</span><strong>{String(plantPopup.well.config || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Unconventional</span><strong>{String(plantPopup.well.unconventional || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Spud date</span><strong>{String(plantPopup.well.spud || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Source</span><strong>{String(plantPopup.well.source || '—')}</strong></div>
+                    <div className="plant-popup-row"><span>Lat / Lon</span><strong>{plantPopup.lat.toFixed(5)}, {plantPopup.lon.toFixed(5)}</strong></div>
+                    {plantPopup.well.meta && Object.keys(plantPopup.well.meta).length > 0 && (
+                      <div className="plant-popup-meta">
+                        <div className="plant-popup-subtitle">All attributes</div>
+                        {Object.entries(plantPopup.well.meta)
+                          .filter(([k, v]) => v != null && v !== '' && !['name','operator','status','type','api','state','county','config','spud','unconventional','source','meta'].includes(k))
+                          .map(([k, v]) => (
+                            <div className="plant-popup-row" key={k}><span>{k}</span><strong>{String(v)}</strong></div>
+                          ))}
+                      </div>
+                    )}
+                  </>
+                
                 ) : plantPopup.kind === 'cable' && plantPopup.cable ? (
                   <div className="plant-popup">
                     <div className="plant-popup-title">{String(plantPopup.cable.name || 'Cable / intertie')}</div>
